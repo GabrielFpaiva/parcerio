@@ -2818,7 +2818,7 @@ Lê `?c=CODIGO&de=Nome` do query string. Precisa de:
 - `og:image` estática, hospedada junto.
 - O código **grande, monoespaçado e em blocos de 4**, com botão de copiar.
 - Instrução curta de instalar o Expo Go, com os dois links de loja.
-- Fallback honesto quando não há `?c=`: explica o que é o ParcerIA sem fingir que há um convite.
+- Fallback honesto quando não há `?c=`: explica o que é o Parcerio sem fingir que há um convite.
 - Responsiva e legível no escuro (`prefers-color-scheme`), porque quase todo mundo vai abrir pelo celular, dentro do WhatsApp.
 
 Sem framework, sem build, sem dependência externa. É um arquivo.
@@ -2888,7 +2888,7 @@ Reanimated, worklets e gesture-handler só existem de verdade dentro do binário
 git add -A && git commit -m "docs: record device verification findings for spec 2"
 ```
 
-Atualizar `01 - Projects/ParcerIA.md` e `02 - Areas/Projects Dashboard.md` no vault: Spec 2 concluída, decisão de não usar Cloud Functions e o que ela empurra para a Spec 4 (§7 da spec).
+Atualizar `01 - Projects/Parcerio.md` e `02 - Areas/Projects Dashboard.md` no vault: Spec 2 concluída, decisão de não usar Cloud Functions e o que ela empurra para a Spec 4 (§7 da spec).
 
 ---
 
