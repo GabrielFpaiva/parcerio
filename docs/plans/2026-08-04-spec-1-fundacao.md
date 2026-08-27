@@ -166,7 +166,7 @@ lados sem arrastar dependência.
 
 - [ ] **Step 1: Gerar o scaffold dentro da pasta existente**
 
-`01 - Projects/parceria/` **já existe** com `docs/` dentro (spec e este plano), e o
+`01 - Projects/parcerio/` **já existe** com `docs/` dentro (spec e este plano), e o
 `create-expo-app` recusa diretório não vazio. O repositório git e a branch
 `feat/spec-1-fundacao` também já foram criados no setup. Por isso: gerar num diretório
 temporário e trazer o conteúdo para cá.
