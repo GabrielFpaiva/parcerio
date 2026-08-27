@@ -3,7 +3,7 @@ date: "2026-08-03"
 type: project
 tags:
   - project
-  - parceria
+  - parcerio
   - react-native
   - expo
   - firebase
@@ -1430,6 +1430,7 @@ torna o vínculo especial.
 | Órbita no mapa | Membros próximos se agrupam num visual orbital |
 | Conquistas exclusivas | "Os Sete Dias", "Turnê" (3 cidades), "Um Ano" |
 | Retrospectiva de grupo | Peça compartilhável e o motor viral mais forte do app |
+| **Jogo diário** | Uma pergunta por dia, a mesma para o app inteiro, votada dentro do grupo |
 
 ### O ranking — e o que ele deliberadamente não é
 
@@ -1448,6 +1449,24 @@ O que **nunca** existe:
 
 Competição é sempre **do grupo contra o próprio passado**, jamais de um membro contra
 outro.
+
+### Jogo diário — e por que ele não fere a regra acima
+
+Todo dia o app faz uma pergunta ao grupo — *"quem é mais provável de ter um pirrai?"* — e
+cada membro vota em um membro, inclusive em si mesmo. Quando todos votam, a contagem é
+revelada.
+
+Isso aponta uma pessoa, o que à primeira vista colide com o parágrafo anterior. A
+distinção que faz o jogo caber: o ranking proibido ordena os membros **por qualidade da
+amizade**; o jogo aponta alguém **por uma previsão engraçada sobre a vida dele**. O
+catálogo é curado sob quatro regras que existem para manter essa fronteira, e o autovoto
+é permitido de propósito — assumir a piada antes que apontem para você é o que faz zoeira
+consentida funcionar.
+
+O jogo alimenta só o `xparceria` do grupo, com teto de 15/dia, e **não segura a
+dormência**: grupo que joga todo dia e não se encontra continua esfriando.
+
+**Design completo:** `docs/2026-08-27-jogo-diario-design.md`.
 
 ### Dormência
 
@@ -1846,7 +1865,7 @@ Este documento é grande demais para virar um único plano. A implementação se
 | 3 | **Mapa e presença** | Mapa, marcadores, presença com throttle, bottom sheet, permissões | 2 |
 | 4 | **Progressão** | Motor puro (XParceria, Temperatura, Nível), emoji diário, handshake, timeline, cerimônias, job diário | 2 |
 | 5 | **Missões e insights** | Catálogo, geração ponderada, verificação, desafios de resgate, motor determinístico, conquistas | 4 |
-| 6 | **Super Parceria e LLM** | Detecção de triângulos, bônus de grupo, retrospectiva, integração com Claude | 4, 5 |
+| 6 | **Super Parceria e LLM** | Detecção de triângulos, bônus de grupo, jogo diário, retrospectiva, integração com Claude | 4, 5 |
 
 **Ordem de execução:** 1 → 2 → 3 ∥ 4 → 5 → *(teste de campo)* → 6.
 
