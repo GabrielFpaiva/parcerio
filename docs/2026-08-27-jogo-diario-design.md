@@ -67,7 +67,7 @@ Isso foi decidido conscientemente, contra duas alternativas descartadas:
   → card na tela da Super Parceria: a pergunta + quantos já votaram
   → cada membro vota em UM membro, inclusive em si mesmo
   → enquanto a rodada está aberta, ninguém vê voto de ninguém
-  → fecha quando TODOS votaram, ou às 23:59 (America/Sao_Paulo)
+  → fecha quando TODOS votaram, ou na virada do dia (America/Sao_Paulo)
   → revela: a contagem e quem votou em quem
 ```
 
@@ -100,20 +100,30 @@ o problema deixa de existir sem precisar de servidor.
 do grupo. É o efeito Wordle — o assunto vaza para o WhatsApp, que é exatamente para onde
 este app empurra conversa.
 
-### A verificar antes de implementar
+### Verificado contra o emulador em 2026-08-28
 
-As regras do Firestore têm `request.time` e aritmética inteira, incluindo `%`. Se
-`request.time.toMillis()` permitir calcular o índice do dia dentro da regra, **a regra
-consegue rejeitar qualquer `questionId` que não seja o do dia** — e o tamanho do catálogo
-vira mais um literal fixado na regra, exatamente o padrão que a Spec 2 estabeleceu.
+**A regra calcula o índice do dia sozinha.** Testado com dois casos — aceita o índice
+certo, nega o errado:
 
-Isso ainda **não foi verificado contra o emulador**. A Spec 2 rendeu três achados que
-mudaram o desenho (`getAfter()`, `expiresAt`, deep link no Expo Go) justamente por
-verificar antes de assumir. Este item entra na mesma fila.
+```
+function dayIndex() {
+  return int((request.time.toMillis() - 10800000) / 86400000) % CATALOG_SIZE;
+}
+```
 
-**Se não der:** `questionId` é escrito pelo primeiro votante e travado como imutável pela
-regra. Um cliente adulterado corromperia o histórico do próprio grupo e de mais ninguém.
-Risco aceito e documentado, não silenciado.
+Os `10800000` ms são as 3 horas de `America/Sao_Paulo`, que movem a virada do dia do UTC
+para a meia-noite local. `CATALOG_SIZE` é literal na regra — mais um valor fixado, no
+mesmo padrão que a Spec 2 estabeleceu. Crescer o catálogo passa a exigir deploy de
+regras, o que é barato e é o preço certo por não confiar no cliente.
+
+Consequência: **a regra rejeita qualquer `questionId` que não seja o do dia.** O cenário
+de fallback (`questionId` travado pelo primeiro votante) foi descartado — não é mais
+necessário.
+
+**Corrida na virada do dia:** quem abre o modal às 23:59 e confirma às 00:00:01 tem o
+voto negado, porque `request.time` já caiu no dia seguinte. Está correto — a rodada
+mudou de verdade, o documento é outro (`games/{data}`) e a pergunta é outra. A tela
+precisa tratar essa negação recarregando a rodada, não como erro.
 
 ---
 
@@ -192,14 +202,21 @@ consulta de histórico por range no id do documento.
 
 ```ts
 {
-  date: string;              // "2026-08-27"
-  questionId: string;        // imutável depois do create
+  date: string;              // "2026-08-27" — igual ao id, para leitura humana
+  dayNumber: number;         // dias desde a época, em America/Sao_Paulo
+  questionId: string;        // tem que ser o do dia (§4)
   voterUids: string[];       // QUEM votou. Público. Não diz em quem.
-  xpAwarded: number;         // literal fixado na regra
+  xpAwarded: number;         // 6 ou 15, fixado na regra
 }
 ```
 
 `voterUids` ser público é de propósito: alimenta o *"faltam 2"* do card sem vazar nada.
+
+`dayNumber` existe por causa da regra, não da tela. A regra precisa responder *"a rodada
+deste documento já passou?"*, e comparar o inteiro do dia com o de `request.time` é uma
+subtração. Derivar `"2026-08-27"` dentro da regra para comparar com o id seria manipulação
+de string em `rules`, que é onde essa linguagem é pior. O id continua sendo a data porque
+é ele que dá a consulta de histórico por range.
 
 ### `superPartnerships/{spid}/games/{YYYY-MM-DD}/votes/{uid}`
 
@@ -253,11 +270,11 @@ literal fixado na regra, e cada regra tem um teste que a vê negando.
 | Leitura de `votes/*` exige rodada fechada **ou** ser o próprio voto | Voto escondido até a revelação, sem impedir você de reler o que votou |
 | `voterUids` só cresce, e só com o próprio uid | Não dá para forjar quórum nem apagar quem votou |
 | `xpAwarded` só aceita os literais de §9 | XP não é inventado pelo cliente |
-| `questionId` imutável depois do create | Histórico do dia não é reescrito |
+| `questionId` tem que ser o do dia, calculado pela própria regra (§4) | Ninguém escolhe nem re-sorteia a pergunta, e o histórico do dia não é reescrito |
 
 **Rodada fechada**, na regra, é: `voterUids.size()` igual ao número de membros, **ou**
-`request.time` depois de 23:59 do dia no id do documento. O número de membros sai de um
-`get()` no documento da Super Parceria.
+o `dayNumber` de `request.time` maior que o `dayNumber` do documento. O número de membros
+sai de um `get()` no documento da Super Parceria.
 
 O voto e o `voterUids` são escritos **na mesma transação**. A Spec 2 já provou com
 `getAfter()` que a regra enxerga o estado pós-transação, então a regra do voto consegue
@@ -276,6 +293,7 @@ nada. Cada guarda abaixo precisa do seu próprio teste, com o resto do documento
 - Escrever `votes/{uid}` sem tocar em `voterUids` na mesma transação.
 - Remover um uid de `voterUids` mantendo o próprio voto intacto.
 - Escrever `xpAwarded` fora dos literais, um literal errado de cada vez.
+- Criar a rodada com o `questionId` de ontem e com o de amanhã.
 
 ---
 
@@ -284,14 +302,24 @@ nada. Cada guarda abaixo precisa do seu próprio teste, com o resto do documento
 O jogo alimenta o `xparceria` da Super Parceria, que **já existe no modelo, separado das
 arestas**. Não encosta em XP de parceria nem em temperatura.
 
-| Ação | XParceria do grupo |
+| Estado da rodada | `xpAwarded` do dia |
 |---|---|
-| Votar | +6 |
-| Todos votaram | +9 |
-| **Teto diário** | **15** |
+| Alguém votou | **6** |
+| Todos votaram | **15** |
+
+**O XP é da rodada, não do votante.** Numa Super Parceria de 6 pessoas, seis votos não
+valem 36 — a rodada vale 6 enquanto está parcial e 15 quando fecha. Sem isso o teto de
+15/dia seria estourado por qualquer grupo com mais de dois membros, e grupo grande
+ganharia mais por ser grande, que é o oposto do que o produto quer.
+
+Isso deixa a regra trivial de escrever e de verificar:
+
+```
+xpAwarded == (voterUids.size() == memberCount ? 15 : 6)
+```
 
 Os números espelham de propósito o ritual diário da dupla (emoji +6, reciprocidade +6,
-teto 15). Um encontro de duas horas continua valendo +180 numa aresta. A proporção que
+teto 15), e o total fecha exatamente no teto. Um encontro de duas horas continua valendo +180 numa aresta. A proporção que
 sustenta a tese do produto fica intacta.
 
 **O jogo não segura a dormência.** Dormência é movida por temperatura de aresta, que é
@@ -323,7 +351,7 @@ comentário na revelação, histórico navegável além do range simples por dat
 | Risco | Tamanho | O que se sabe hoje |
 |---|---|---|
 | **Sem push remota no Expo Go** | Alto | Notificação local só dispara para quem já abriu o app. Um jogo *diário* sem push é frágil por construção. Só melhora no dev build, no V1 |
-| **"Todos votaram" fica raro em grupo de 8** | Médio | O +9 vira inalcançável justamente nos grupos maiores. Pode ser que o bônus tenha que virar proporcional ao quórum. **Sem dado para decidir agora** — decidir depois de ver rodada real |
+| **"Todos votaram" fica raro em grupo de 8** | Médio | A rodada trava em 6 e nunca chega a 15 justamente nos grupos maiores, onde um ausente basta. Pode ser que o fechamento tenha que aceitar quórum em vez de unanimidade. **Sem dado para decidir agora** — decidir depois de ver rodada real |
 | **O catálogo esgota** | Médio | 150 perguntas jogadas todo dia repetem em cinco meses. A fila de sugestão ajuda, mas depende de você curar |
 | **Uma pergunta ruim escapa** | Baixo, impacto alto | Mitigado pelas quatro regras de curadoria de §5, e reversível na hora reescrevendo o `text` daquele `order` |
 
