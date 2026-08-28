@@ -328,7 +328,7 @@ export function tallyVotes(votes: Record<string, string>): Array<{ uid: string; 
   }
   return [...counts.entries()]
     .map(([uid, count]) => ({ uid, count }))
-    .sort((a, b) => b.count - a.count || a.uid.localeCompare(b.uid));
+    .sort((a, b) => b.count - a.count || (a.uid < b.uid ? -1 : a.uid > b.uid ? 1 : 0));
 }
 ```
 
