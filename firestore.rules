@@ -19,6 +19,31 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/partnerships/$(pid)).data;
     }
 
+    function superPartnership(spid) {
+      return get(/databases/$(database)/documents/superPartnerships/$(spid)).data;
+    }
+
+    // Precisa bater com GAME_CATALOG_SIZE em shared/dailyGame.ts.
+    function gameCatalogSize() {
+      return 120;
+    }
+
+    // Os 10800000 ms são as 3h de America/Sao_Paulo: movem a virada do dia
+    // do UTC para a meia-noite local. Verificado contra o emulador em 28/08 —
+    // a regra calcula o índice e nega o índice errado.
+    function todayNumber() {
+      return int((request.time.toMillis() - 10800000) / 86400000);
+    }
+
+    function questionOfTheDay() {
+      return 'q' + string(todayNumber() % gameCatalogSize());
+    }
+
+    // XP da rodada, nunca do votante: 8 votos valem o mesmo que 3.
+    function gameXp(voterCount, memberCount) {
+      return voterCount >= memberCount ? 15 : 6;
+    }
+
     function zeroStats() {
       return {
         'partnershipCount': 0,
@@ -147,6 +172,32 @@ service cloud.firestore {
                     && request.resource.data.suggestedAt == request.time
                     && request.resource.data.keys().hasOnly(['text', 'suggestedBy', 'suggestedAt']);
       allow read, update, delete: if false;
+    }
+
+    // A Spec 6 é quem define leitura e escrita do documento da Super Parceria
+    // em si. Aqui só existe o que o jogo diário precisa.
+    match /superPartnerships/{spid}/games/{date} {
+      allow read: if isMember(superPartnership(spid));
+
+      allow create: if isMember(superPartnership(spid))
+                    && request.resource.data.date == date
+                    && request.resource.data.dayNumber == todayNumber()
+                    && request.resource.data.questionId == questionOfTheDay()
+                    && request.resource.data.voterUids == [request.auth.uid]
+                    && request.resource.data.xpAwarded ==
+                         gameXp(1, superPartnership(spid).members.size());
+
+      allow update: if isMember(superPartnership(spid))
+                    && !(request.auth.uid in resource.data.voterUids)
+                    && request.resource.data.voterUids ==
+                         resource.data.voterUids.concat([request.auth.uid])
+                    && request.resource.data.xpAwarded ==
+                         gameXp(request.resource.data.voterUids.size(),
+                                superPartnership(spid).members.size())
+                    && request.resource.data.diff(resource.data)
+                         .affectedKeys().hasOnly(['voterUids', 'xpAwarded']);
+
+      allow delete: if false;
     }
 
     // ---- padrão --------------------------------------------------------
