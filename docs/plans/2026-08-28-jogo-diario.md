@@ -471,7 +471,7 @@ describe('questionSuggestions', () => {
 
 - [ ] **Step 2: Rodar e ver falhar**
 
-Run: `npm run test:rules -- tests/rules/game-catalog.test.ts`
+Run: `npx firebase emulators:exec --only firestore "npx jest -c jest.rules.config.js tests/rules/game-catalog.test.ts"`
 Expected: FAIL — as duas asserções `assertSucceeds` falham, porque hoje as duas coleções
 caem no `match /{document=**} { allow read, write: if false }`.
 
@@ -504,8 +504,8 @@ Em `firestore.rules`, **antes** do bloco `// ---- padrão ----`, insira:
 
 - [ ] **Step 4: Rodar e ver passar**
 
-Run: `npm run test:rules -- tests/rules/game-catalog.test.ts`
-Expected: PASS, 13 testes.
+Run: `npx firebase emulators:exec --only firestore "npx jest -c jest.rules.config.js tests/rules/game-catalog.test.ts"`
+Expected: PASS, 12 testes.
 
 - [ ] **Step 5: Commit**
 
@@ -767,7 +767,7 @@ describe('rodada — read', () => {
 
 - [ ] **Step 3: Rodar e ver falhar**
 
-Run: `npm run test:rules -- tests/rules/game-round.test.ts`
+Run: `npx firebase emulators:exec --only firestore "npx jest -c jest.rules.config.js tests/rules/game-round.test.ts"`
 Expected: FAIL — todos os `assertSucceeds` falham, a coleção ainda cai no default deny.
 
 - [ ] **Step 4: Escrever as regras**
@@ -837,7 +837,7 @@ E dentro do bloco `// ---- jogo diário ----` criado na Task 3, acrescente:
 > `rules` não tem `padStart` e o formato precisa ser idêntico nos dois lados. Os ids em
 > `gameQuestions` seguem isso.
 
-Run: `npm run test:rules -- tests/rules/game-round.test.ts`
+Run: `npx firebase emulators:exec --only firestore "npx jest -c jest.rules.config.js tests/rules/game-round.test.ts"`
 Expected: PASS, 19 testes.
 
 - [ ] **Step 6: Commit**
@@ -987,7 +987,7 @@ describe('voto — create', () => {
 
 - [ ] **Step 2: Rodar e ver falhar**
 
-Run: `npm run test:rules -- tests/rules/game-votes.test.ts`
+Run: `npx firebase emulators:exec --only firestore "npx jest -c jest.rules.config.js tests/rules/game-votes.test.ts"`
 Expected: FAIL nos `assertSucceeds`.
 
 - [ ] **Step 3: Escrever a regra**
@@ -1012,7 +1012,7 @@ Dentro do bloco `match /superPartnerships/{spid}/games/{date}`, acrescente:
 
 - [ ] **Step 4: Rodar e ver passar**
 
-Run: `npm run test:rules -- tests/rules/game-votes.test.ts`
+Run: `npx firebase emulators:exec --only firestore "npx jest -c jest.rules.config.js tests/rules/game-votes.test.ts"`
 Expected: PASS nos 8 testes de escrita. **Os de leitura ainda não existem** — são a Task 6.
 
 - [ ] **Step 5: Commit**
@@ -1115,7 +1115,7 @@ describe('voto — read', () => {
 
 - [ ] **Step 2: Rodar e ver falhar**
 
-Run: `npm run test:rules -- tests/rules/game-votes.test.ts`
+Run: `npx firebase emulators:exec --only firestore "npx jest -c jest.rules.config.js tests/rules/game-votes.test.ts"`
 Expected: FAIL — hoje não há nenhuma permissão de leitura em `votes/*`, então todos os
 `assertSucceeds` deste describe falham.
 
@@ -1149,7 +1149,7 @@ E dentro de `match /votes/{voter}`, acrescente **antes** do `allow create`:
 
 - [ ] **Step 4: Rodar e ver passar**
 
-Run: `npm run test:rules -- tests/rules/game-votes.test.ts`
+Run: `npx firebase emulators:exec --only firestore "npx jest -c jest.rules.config.js tests/rules/game-votes.test.ts"`
 Expected: PASS, 16 testes.
 
 - [ ] **Step 5: Mutar cada guarda, uma de cada vez**
