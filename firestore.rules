@@ -220,9 +220,17 @@ service cloud.firestore {
         // O getAfter enxerga o estado pós-transação (provado na Spec 2), então
         // a regra consegue exigir que o voto e a entrada em voterUids sejam
         // escritos juntos. Sem isso daria para votar sem aparecer como votante.
+        //
+        // isMember aqui é defesa em profundidade, não a única barreira: hoje
+        // quem não é do grupo já não entraria em voterUids, então nunca bate
+        // o getAfter acima. Mas se a regra da rodada afrouxar essa checagem
+        // um dia, esta linha continua barrando o voto sozinha — mesmo padrão
+        // do isSignedIn() redundante em invites.update.
         allow create: if isOwner(voter)
+                      && isMember(superPartnership(spid))
                       && request.resource.data.votedFor in superPartnership(spid).members
                       && request.resource.data.votedAt == request.time
+                      && request.resource.data.keys().hasOnly(['votedFor', 'votedAt'])
                       && getAfter(
                            /databases/$(database)/documents/superPartnerships/$(spid)/games/$(date)
                          ).data.voterUids.hasAll([voter]);

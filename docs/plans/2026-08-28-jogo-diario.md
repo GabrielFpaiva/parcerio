@@ -993,11 +993,26 @@ describe('voto — create', () => {
   });
 
   it('NEGA votar no lugar de outra pessoa', async () => {
+    // A Carol JÁ está em voterUids, então o getAfter passa e a única guarda
+    // que pode derrubar isto é o isOwner. Antes, com a Carol fora da lista,
+    // as duas falhavam juntas e o teste continuaria verde sem o isOwner.
+    await seedRound(env, SPID, hoje(), rodadaNova(ALICE, { voterUids: [ALICE, CAROL] }));
     const db = env.authenticatedContext(BOB).firestore();
     const b = db.batch();
-    b.update(db.doc(caminho()), { voterUids: [ALICE, BOB], xpAwarded: 6 });
+    b.update(db.doc(caminho()), { voterUids: [ALICE, CAROL, BOB], xpAwarded: 15 });
     b.set(db.doc(votoPath(CAROL)), { votedFor: ALICE, votedAt: serverTimestamp() });
     await assertFails(b.commit());
+  });
+
+  it('NEGA voto de quem não é do grupo, mesmo já constando em voterUids', async () => {
+    // isMember é defesa em profundidade: com DAVE já em voterUids (via seed
+    // que ignora as regras), o getAfter e o resto do payload batem — só a
+    // guarda isMember pode barrar isto.
+    await seedRound(env, SPID, hoje(), rodadaNova(ALICE, { voterUids: [ALICE, DAVE] }));
+    const dave = env.authenticatedContext(DAVE).firestore();
+    await assertFails(
+      dave.doc(votoPath(DAVE)).set({ votedFor: ALICE, votedAt: serverTimestamp() }),
+    );
   });
 
   it('NEGA votar em quem não é do grupo', async () => {
@@ -1019,6 +1034,20 @@ describe('voto — create', () => {
     await assertFails(b.commit());
   });
 
+  it('NEGA anexar campo além de votedFor e votedAt', async () => {
+    // Sem o hasOnly, o cliente colaria qualquer campo extra no voto — o
+    // mesmo risco que questionSuggestions e a criação da rodada já fecham.
+    const db = env.authenticatedContext(BOB).firestore();
+    const b = db.batch();
+    b.update(db.doc(caminho()), { voterUids: [ALICE, BOB], xpAwarded: 6 });
+    b.set(db.doc(votoPath(BOB)), {
+      votedFor: CAROL,
+      votedAt: serverTimestamp(),
+      nota: 'campo extra',
+    });
+    await assertFails(b.commit());
+  });
+
   it('NEGA trocar o voto depois de dado', async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
       await ctx.firestore().doc(votoPath(BOB)).set({ votedFor: CAROL, votedAt: new Date() });
@@ -1033,6 +1062,19 @@ describe('voto — create', () => {
     });
     const db = env.authenticatedContext(BOB).firestore();
     await assertFails(db.doc(votoPath(BOB)).delete());
+  });
+});
+
+describe('voto — create (primeiro votante)', () => {
+  // Sem beforeEach de seedRound: a rodada de hoje não existe ainda. Todo dia
+  // alguém é o primeiro — este é o caminho mais comum do produto, não a
+  // exceção, então tem que estar coberto separadamente do "entrar" acima.
+  it('PERMITE ao primeiro votante criar a rodada e o próprio voto no mesmo lote', async () => {
+    const db = env.authenticatedContext(ALICE).firestore();
+    const b = db.batch();
+    b.set(db.doc(caminho()), rodadaNova(ALICE));
+    b.set(db.doc(votoPath(ALICE)), { votedFor: BOB, votedAt: serverTimestamp() });
+    await assertSucceeds(b.commit());
   });
 });
 ```
@@ -1051,9 +1093,17 @@ Dentro do bloco `match /superPartnerships/{spid}/games/{date}`, acrescente:
         // O getAfter enxerga o estado pós-transação (provado na Spec 2), então
         // a regra consegue exigir que o voto e a entrada em voterUids sejam
         // escritos juntos. Sem isso daria para votar sem aparecer como votante.
+        //
+        // isMember aqui é defesa em profundidade, não a única barreira: hoje
+        // quem não é do grupo já não entraria em voterUids, então nunca bate
+        // o getAfter acima. Mas se a regra da rodada afrouxar essa checagem
+        // um dia, esta linha continua barrando o voto sozinha — mesmo padrão
+        // do isSignedIn() redundante em invites.update.
         allow create: if isOwner(voter)
+                      && isMember(superPartnership(spid))
                       && request.resource.data.votedFor in superPartnership(spid).members
                       && request.resource.data.votedAt == request.time
+                      && request.resource.data.keys().hasOnly(['votedFor', 'votedAt'])
                       && getAfter(
                            /databases/$(database)/documents/superPartnerships/$(spid)/games/$(date)
                          ).data.voterUids.hasAll([voter]);
@@ -1065,7 +1115,7 @@ Dentro do bloco `match /superPartnerships/{spid}/games/{date}`, acrescente:
 - [ ] **Step 4: Rodar e ver passar**
 
 Run: `npx firebase emulators:exec --only firestore "npx jest -c jest.rules.config.js tests/rules/game-votes.test.ts"`
-Expected: PASS nos 8 testes de escrita. **Os de leitura ainda não existem** — são a Task 6.
+Expected: PASS nos 11 testes de escrita. **Os de leitura ainda não existem** — são a Task 6.
 
 - [ ] **Step 5: Commit**
 
