@@ -1252,7 +1252,7 @@ E dentro de `match /votes/{voter}`, acrescente **antes** do `allow create`:
 - [ ] **Step 4: Rodar e ver passar**
 
 Run: `npx firebase emulators:exec --only firestore "npx jest -c jest.rules.config.js tests/rules/game-votes.test.ts"`
-Expected: PASS, 16 testes.
+Expected: PASS, 19 testes (11 de escrita da Task 5 + 8 de leitura).
 
 - [ ] **Step 5: Mutar cada guarda, uma de cada vez**
 
