@@ -59,10 +59,16 @@ service cloud.firestore {
 
     // Fechada = todo mundo votou, OU o dia da rodada já passou. Não existe job
     // que feche: o fechamento é derivado na leitura, como o decaimento da
-    // Temperatura.
+    // Temperatura. hasAll (contenção), não comparação de tamanho: contar
+    // tamanhos é proxy de "todo mundo votou" e só funciona enquanto os dois
+    // conjuntos não puderem divergir. Hoje não podem, porque a Spec 6 ainda
+    // não escreveu regra de saída de membro em superPartnerships — no dia em
+    // que escrever, um membro saindo no meio da rodada bateria o quórum por
+    // tamanho sem que todo mundo presente tivesse votado, abrindo o voto
+    // cedo sem erro nenhum.
     function roundClosed(spid, date) {
       let g = get(/databases/$(database)/documents/superPartnerships/$(spid)/games/$(date)).data;
-      return g.voterUids.size() >= superPartnership(spid).members.size()
+      return g.voterUids.hasAll(superPartnership(spid).members)
           || todayNumber() > g.dayNumber;
     }
 
@@ -227,12 +233,18 @@ service cloud.firestore {
 
       match /votes/{voter} {
         // O próprio voto é sempre legível — senão a pessoa não consegue reler
-        // o que votou. O dos outros, só depois que a rodada fecha.
+        // o que votou. O dos outros, só depois que a rodada fecha. O ramo do
+        // dono não checa isMember de propósito: checar custaria um get() na
+        // leitura mais frequente da feature, e o documento só existe se a
+        // pessoa votou (create já exige isMember) — não há vazamento a
+        // fechar, só um get() a economizar.
         allow get:  if isOwner(voter)
                     || (isMember(superPartnership(spid)) && roundClosed(spid, date));
 
         // list não tem exceção para o próprio voto: listar devolveria os
-        // outros junto.
+        // outros junto. E isMember aqui não é opcional como no get: sem ele,
+        // qualquer logado listaria os votos de qualquer rodada fechada de
+        // qualquer grupo — e é o list que a apuração usa, não o get.
         allow list: if isMember(superPartnership(spid)) && roundClosed(spid, date);
 
         // O getAfter enxerga o estado pós-transação (provado na Spec 2), então

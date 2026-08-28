@@ -224,4 +224,12 @@ describe('voto — read', () => {
     const dave = env.authenticatedContext(DAVE).firestore();
     await assertFails(dave.doc(votoPath(ALICE)).get());
   });
+
+  it('NEGA que quem não é do grupo LISTE os votos de rodada fechada', async () => {
+    // Sem o isMember no list, qualquer logado lê todos os votos de qualquer
+    // rodada fechada — e é o list que a apuração usa, não o get.
+    await semearVotos([ALICE, BOB, CAROL], { xpAwarded: 15 });
+    const dave = env.authenticatedContext(DAVE).firestore();
+    await assertFails(dave.collection(`superPartnerships/${SPID}/games/${hoje()}/votes`).get());
+  });
 });

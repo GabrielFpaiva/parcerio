@@ -1212,6 +1212,14 @@ describe('voto — read', () => {
     const dave = env.authenticatedContext(DAVE).firestore();
     await assertFails(dave.doc(votoPath(ALICE)).get());
   });
+
+  it('NEGA que quem não é do grupo LISTE os votos de rodada fechada', async () => {
+    // Sem o isMember no list, qualquer logado lê todos os votos de qualquer
+    // rodada fechada — e é o list que a apuração usa, não o get.
+    await semearVotos([ALICE, BOB, CAROL], { xpAwarded: 15 });
+    const dave = env.authenticatedContext(DAVE).firestore();
+    await assertFails(dave.collection(`superPartnerships/${SPID}/games/${hoje()}/votes`).get());
+  });
 });
 ```
 
@@ -1228,10 +1236,16 @@ Junto às outras funções do topo de `firestore.rules`:
 ```
     // Fechada = todo mundo votou, OU o dia da rodada já passou. Não existe job
     // que feche: o fechamento é derivado na leitura, como o decaimento da
-    // Temperatura.
+    // Temperatura. hasAll (contenção), não comparação de tamanho: contar
+    // tamanhos é proxy de "todo mundo votou" e só funciona enquanto os dois
+    // conjuntos não puderem divergir. Hoje não podem, porque a Spec 6 ainda
+    // não escreveu regra de saída de membro em superPartnerships — no dia em
+    // que escrever, um membro saindo no meio da rodada bateria o quórum por
+    // tamanho sem que todo mundo presente tivesse votado, abrindo o voto
+    // cedo sem erro nenhum.
     function roundClosed(spid, date) {
       let g = get(/databases/$(database)/documents/superPartnerships/$(spid)/games/$(date)).data;
-      return g.voterUids.size() >= superPartnership(spid).members.size()
+      return g.voterUids.hasAll(superPartnership(spid).members)
           || todayNumber() > g.dayNumber;
     }
 ```
@@ -1240,19 +1254,25 @@ E dentro de `match /votes/{voter}`, acrescente **antes** do `allow create`:
 
 ```
         // O próprio voto é sempre legível — senão a pessoa não consegue reler
-        // o que votou. O dos outros, só depois que a rodada fecha.
+        // o que votou. O dos outros, só depois que a rodada fecha. O ramo do
+        // dono não checa isMember de propósito: checar custaria um get() na
+        // leitura mais frequente da feature, e o documento só existe se a
+        // pessoa votou (create já exige isMember) — não há vazamento a
+        // fechar, só um get() a economizar.
         allow get:  if isOwner(voter)
                     || (isMember(superPartnership(spid)) && roundClosed(spid, date));
 
         // list não tem exceção para o próprio voto: listar devolveria os
-        // outros junto.
+        // outros junto. E isMember aqui não é opcional como no get: sem ele,
+        // qualquer logado listaria os votos de qualquer rodada fechada de
+        // qualquer grupo — e é o list que a apuração usa, não o get.
         allow list: if isMember(superPartnership(spid)) && roundClosed(spid, date);
 ```
 
 - [ ] **Step 4: Rodar e ver passar**
 
 Run: `npx firebase emulators:exec --only firestore "npx jest -c jest.rules.config.js tests/rules/game-votes.test.ts"`
-Expected: PASS, 19 testes (11 de escrita da Task 5 + 8 de leitura).
+Expected: PASS, 20 testes (11 de escrita da Task 5 + 9 de leitura).
 
 - [ ] **Step 5: Mutar cada guarda, uma de cada vez**
 
@@ -1270,9 +1290,12 @@ convite aberta na árvore de trabalho.
 | Em `roundClosed`, trocar `>=` por `>` | *PERMITE ler o voto de outro depois que todos votaram* |
 | Em `roundClosed`, apagar a cláusula `\|\| todayNumber() > g.dayNumber` | *PERMITE ler o voto de outro depois da virada do dia* |
 | Em `roundClosed`, trocar `todayNumber() > g.dayNumber` por `true` | *NEGA ler o voto de outro na rodada de HOJE que só tem um votante* |
+| Em `allow list`, apagar o operando `isMember(superPartnership(spid)) &&` | *NEGA que quem não é do grupo LISTE os votos de rodada fechada* |
+| Em `roundClosed`, trocar `hasAll(superPartnership(spid).members)` de volta por `.size() >= superPartnership(spid).members.size()` | Nenhum teste fica vermelho — a divergência entre conter e contar só é alcançável no dia em que a Spec 6 permitir sair do grupo; sem essa capacidade nenhum fixture hoje consegue construir o estado que os dois cálculos discordam. Reporte isso honestamente em vez de inventar um teste para um estado inalcançável. |
 
 Se alguma mutação **não** deixar nada vermelho, existe um buraco de cobertura ali:
-escreva o teste que falta antes de seguir.
+escreva o teste que falta antes de seguir — exceto a última linha acima, cuja ausência de
+vermelho é esperada e documentada.
 
 - [ ] **Step 6: Validar tudo e commitar**
 
