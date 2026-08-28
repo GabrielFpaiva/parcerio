@@ -271,10 +271,25 @@ literal fixado na regra, e cada regra tem um teste que a vê negando.
 | `voterUids` só cresce, e só com o próprio uid | Não dá para forjar quórum nem apagar quem votou |
 | `xpAwarded` só aceita os literais de §9 | XP não é inventado pelo cliente |
 | `questionId` tem que ser o do dia, calculado pela própria regra (§4) | Ninguém escolhe nem re-sorteia a pergunta, e o histórico do dia não é reescrito |
+| O id do documento tem que ser a data de hoje, também derivada na regra | Não dá para cunhar rodadas extras em ids arbitrários — cada uma seria 15 XP a mais |
+| `update` exige que o `dayNumber` da rodada seja o de hoje | Rodada que o domínio já considera fechada não continua gravável |
+| Quem lista os votos tem que ser do grupo | `list` é o caminho da apuração; sem essa guarda, um estranho lê a rodada fechada inteira |
+| `create` de rodada e de voto só aceita as chaves previstas (`hasOnly`) | Documento não vira depósito de campo arbitrário — e como o `update` congela o resto, campo injetado no nascimento seria permanente |
 
-**Rodada fechada**, na regra, é: `voterUids.size()` igual ao número de membros, **ou**
-o `dayNumber` de `request.time` maior que o `dayNumber` do documento. O número de membros
+Três dessas guardas não estavam neste documento quando ele foi escrito: o id fixado no dia,
+o `dayNumber` no update e as allowlists. Saíram da revisão da implementação, e as duas
+primeiras fechavam farm de XP — a §9 manda o `xpAwarded` para o `xparceria` do grupo, então
+rodada extra ou rodada de ontem virava número inventado.
+
+**Rodada fechada**, na regra, é: `voterUids` conter **todos** os membros, **ou** o
+`dayNumber` de `request.time` ser maior que o `dayNumber` do documento. O número de membros
 sai de um `get()` no documento da Super Parceria.
+
+É containment (`hasAll`), não comparação de tamanhos, e a diferença importa no futuro: contar
+tamanhos é proxy para *"todo mundo votou"* e só vale enquanto os dois conjuntos não divergem.
+No dia em que a Spec 6 permitir sair do grupo, um membro saindo no meio da rodada faria a
+contagem bater o quórum com alguém presente que não votou — os votos abririam cedo, que é a
+morte do jogo, e sem erro nenhum.
 
 O voto e o `voterUids` são escritos **na mesma transação**. A Spec 2 já provou com
 `getAfter()` que a regra enxerga o estado pós-transação, então a regra do voto consegue
