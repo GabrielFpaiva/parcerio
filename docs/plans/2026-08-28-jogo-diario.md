@@ -466,6 +466,13 @@ describe('questionSuggestions', () => {
     await alice.doc('questionSuggestions/s1').set(sugestao());
     await assertFails(alice.doc('questionSuggestions/s1').update({ text: 'trocando o texto todo' }));
   });
+
+  it('NEGA sugestão com campo além dos três permitidos', async () => {
+    // Sem a allowlist, a fila vira depósito de blob: a regra só olha três
+    // campos e ignora o resto, num documento que ninguém lê e ninguém modera.
+    const alice = env.authenticatedContext(ALICE).firestore();
+    await assertFails(alice.doc('questionSuggestions/s1').set(sugestao({ approved: true })));
+  });
 });
 ```
 
@@ -497,7 +504,8 @@ Em `firestore.rules`, **antes** do bloco `// ---- padrão ----`, insira:
                     && request.resource.data.text is string
                     && request.resource.data.text.size() >= 10
                     && request.resource.data.text.size() <= 140
-                    && request.resource.data.suggestedAt == request.time;
+                    && request.resource.data.suggestedAt == request.time
+                    && request.resource.data.keys().hasOnly(['text', 'suggestedBy', 'suggestedAt']);
       allow read, update, delete: if false;
     }
 ```
@@ -505,7 +513,7 @@ Em `firestore.rules`, **antes** do bloco `// ---- padrão ----`, insira:
 - [ ] **Step 4: Rodar e ver passar**
 
 Run: `npx firebase emulators:exec --only firestore "npx jest -c jest.rules.config.js tests/rules/game-catalog.test.ts"`
-Expected: PASS, 12 testes.
+Expected: PASS, 13 testes.
 
 - [ ] **Step 5: Commit**
 

@@ -144,7 +144,8 @@ service cloud.firestore {
                     && request.resource.data.text is string
                     && request.resource.data.text.size() >= 10
                     && request.resource.data.text.size() <= 140
-                    && request.resource.data.suggestedAt == request.time;
+                    && request.resource.data.suggestedAt == request.time
+                    && request.resource.data.keys().hasOnly(['text', 'suggestedBy', 'suggestedAt']);
       allow read, update, delete: if false;
     }
 

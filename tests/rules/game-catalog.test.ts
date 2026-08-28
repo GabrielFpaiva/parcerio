@@ -102,4 +102,11 @@ describe('questionSuggestions', () => {
     await alice.doc('questionSuggestions/s1').set(sugestao());
     await assertFails(alice.doc('questionSuggestions/s1').update({ text: 'trocando o texto todo' }));
   });
+
+  it('NEGA sugestão com campo além dos três permitidos', async () => {
+    // Sem a allowlist, a fila vira depósito de blob: a regra só olha três
+    // campos e ignora o resto, num documento que ninguém lê e ninguém modera.
+    const alice = env.authenticatedContext(ALICE).firestore();
+    await assertFails(alice.doc('questionSuggestions/s1').set(sugestao({ approved: true })));
+  });
 });
