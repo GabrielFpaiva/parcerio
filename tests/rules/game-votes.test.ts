@@ -157,3 +157,71 @@ describe('voto — create (primeiro votante)', () => {
     await assertSucceeds(b.commit());
   });
 });
+
+describe('voto — read', () => {
+  const semearVotos = async (voterUids: string[], overrides = {}) => {
+    await seedRound(env, SPID, hoje(), rodadaNova(ALICE, { voterUids, ...overrides }));
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      for (const uid of voterUids) {
+        await ctx.firestore().doc(votoPath(uid)).set({ votedFor: CAROL, votedAt: new Date() });
+      }
+    });
+  };
+
+  it('PERMITE reler o PRÓPRIO voto com a rodada aberta', async () => {
+    // Sem isto, quem votou não consegue nem ver o que votou.
+    await semearVotos([ALICE, BOB]);
+    const bob = env.authenticatedContext(BOB).firestore();
+    await assertSucceeds(bob.doc(votoPath(BOB)).get());
+  });
+
+  it('NEGA ler o voto de OUTRO faltando exatamente uma pessoa', async () => {
+    // O caso que importa: com 2 de 3, a rodada ainda está aberta.
+    await semearVotos([ALICE, BOB]);
+    const bob = env.authenticatedContext(BOB).firestore();
+    await assertFails(bob.doc(votoPath(ALICE)).get());
+  });
+
+  it('PERMITE ler o voto de outro depois que todos votaram', async () => {
+    await semearVotos([ALICE, BOB, CAROL], { xpAwarded: 15 });
+    const bob = env.authenticatedContext(BOB).firestore();
+    await assertSucceeds(bob.doc(votoPath(ALICE)).get());
+  });
+
+  it('PERMITE ler o voto de outro depois da virada do dia, mesmo incompleta', async () => {
+    await seedRound(env, SPID, hoje(), rodadaNova(ALICE, { dayNumber: hojeNum() - 1 }));
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc(votoPath(ALICE)).set({ votedFor: CAROL, votedAt: new Date() });
+    });
+    const bob = env.authenticatedContext(BOB).firestore();
+    await assertSucceeds(bob.doc(votoPath(ALICE)).get());
+  });
+
+  it('NEGA ler o voto de outro na rodada de HOJE que só tem um votante', async () => {
+    // Par do teste acima: mesma forma, só o dayNumber muda. Isola a guarda
+    // do dia da guarda do quórum.
+    await semearVotos([ALICE]);
+    const bob = env.authenticatedContext(BOB).firestore();
+    await assertFails(bob.doc(votoPath(ALICE)).get());
+  });
+
+  it('NEGA listar os votos com a rodada aberta', async () => {
+    // A apuração é feita no cliente lendo a coleção. Se o list vazar, todo o
+    // resto não adianta nada.
+    await semearVotos([ALICE, BOB]);
+    const bob = env.authenticatedContext(BOB).firestore();
+    await assertFails(bob.collection(`superPartnerships/${SPID}/games/${hoje()}/votes`).get());
+  });
+
+  it('PERMITE listar os votos depois de fechada', async () => {
+    await semearVotos([ALICE, BOB, CAROL], { xpAwarded: 15 });
+    const bob = env.authenticatedContext(BOB).firestore();
+    await assertSucceeds(bob.collection(`superPartnerships/${SPID}/games/${hoje()}/votes`).get());
+  });
+
+  it('NEGA que quem não é do grupo leia voto de rodada fechada', async () => {
+    await semearVotos([ALICE, BOB, CAROL], { xpAwarded: 15 });
+    const dave = env.authenticatedContext(DAVE).firestore();
+    await assertFails(dave.doc(votoPath(ALICE)).get());
+  });
+});

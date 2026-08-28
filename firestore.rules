@@ -57,6 +57,15 @@ service cloud.firestore {
       return voterCount >= memberCount ? 15 : 6;
     }
 
+    // Fechada = todo mundo votou, OU o dia da rodada já passou. Não existe job
+    // que feche: o fechamento é derivado na leitura, como o decaimento da
+    // Temperatura.
+    function roundClosed(spid, date) {
+      let g = get(/databases/$(database)/documents/superPartnerships/$(spid)/games/$(date)).data;
+      return g.voterUids.size() >= superPartnership(spid).members.size()
+          || todayNumber() > g.dayNumber;
+    }
+
     function zeroStats() {
       return {
         'partnershipCount': 0,
@@ -217,6 +226,15 @@ service cloud.firestore {
       allow delete: if false;
 
       match /votes/{voter} {
+        // O próprio voto é sempre legível — senão a pessoa não consegue reler
+        // o que votou. O dos outros, só depois que a rodada fecha.
+        allow get:  if isOwner(voter)
+                    || (isMember(superPartnership(spid)) && roundClosed(spid, date));
+
+        // list não tem exceção para o próprio voto: listar devolveria os
+        // outros junto.
+        allow list: if isMember(superPartnership(spid)) && roundClosed(spid, date);
+
         // O getAfter enxerga o estado pós-transação (provado na Spec 2), então
         // a regra consegue exigir que o voto e a entrada em voterUids sejam
         // escritos juntos. Sem isso daria para votar sem aparecer como votante.
