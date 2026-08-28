@@ -127,6 +127,27 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ---- jogo diário ---------------------------------------------------
+
+    match /gameQuestions/{qid} {
+      // O catálogo é curado à mão pelo console. Nenhum cliente escreve aqui:
+      // quem escrevesse trocaria a pergunta do dia do app inteiro.
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /questionSuggestions/{sid} {
+      // Fila só de entrada: escreve e some da vista. Ninguém lê pelo app, nem
+      // quem escreveu — leitura transformaria isso num canal de mensagem sem
+      // moderação entre usuários.
+      allow create: if isOwner(request.resource.data.suggestedBy)
+                    && request.resource.data.text is string
+                    && request.resource.data.text.size() >= 10
+                    && request.resource.data.text.size() <= 140
+                    && request.resource.data.suggestedAt == request.time;
+      allow read, update, delete: if false;
+    }
+
     // ---- padrão --------------------------------------------------------
     match /{document=**} {
       allow read, write: if false;
