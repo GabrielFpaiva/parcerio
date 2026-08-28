@@ -215,6 +215,20 @@ service cloud.firestore {
                          .affectedKeys().hasOnly(['voterUids', 'xpAwarded']);
 
       allow delete: if false;
+
+      match /votes/{voter} {
+        // O getAfter enxerga o estado pós-transação (provado na Spec 2), então
+        // a regra consegue exigir que o voto e a entrada em voterUids sejam
+        // escritos juntos. Sem isso daria para votar sem aparecer como votante.
+        allow create: if isOwner(voter)
+                      && request.resource.data.votedFor in superPartnership(spid).members
+                      && request.resource.data.votedAt == request.time
+                      && getAfter(
+                           /databases/$(database)/documents/superPartnerships/$(spid)/games/$(date)
+                         ).data.voterUids.hasAll([voter]);
+
+        allow update, delete: if false;
+      }
     }
 
     // ---- padrão --------------------------------------------------------
