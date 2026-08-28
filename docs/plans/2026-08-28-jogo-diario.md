@@ -868,6 +868,7 @@ autocontido:
 ```ts
 import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import type { RulesTestEnvironment } from '@firebase/rules-unit-testing';
+import { serverTimestamp } from 'firebase/firestore';
 import { ALICE, BOB, CAROL, createTestEnv } from './helpers';
 import { seedRound, seedSuperPartnership, seedUsers } from './factories';
 import { dayNumber, gameDateId, questionIndexFor } from '../../shared/dailyGame';
@@ -901,6 +902,9 @@ const rodadaNova = (voter: string, overrides: Record<string, unknown> = {}) => (
 
 const caminho = (date = hoje()) => `superPartnerships/${SPID}/games/${date}`;
 
+// Escrita que passa pelas regras usa serverTimestamp(), porque a regra exige
+// votedAt == request.time e um Date do cliente nunca bate. Fixture semeada com
+// withSecurityRulesDisabled usa new Date() — mesmo padrão de seedInvite().
 const votoPath = (voter: string, date = hoje()) =>
   `superPartnerships/${SPID}/games/${date}/votes/${voter}`;
 
@@ -913,7 +917,7 @@ describe('voto — create', () => {
     const db = env.authenticatedContext(BOB).firestore();
     const b = db.batch();
     b.update(db.doc(caminho()), { voterUids: [ALICE, BOB], xpAwarded: 6 });
-    b.set(db.doc(votoPath(BOB)), { votedFor: CAROL, votedAt: new Date() });
+    b.set(db.doc(votoPath(BOB)), { votedFor: CAROL, votedAt: serverTimestamp() });
     await assertSucceeds(b.commit());
   });
 
@@ -923,7 +927,7 @@ describe('voto — create', () => {
     const db = env.authenticatedContext(BOB).firestore();
     const b = db.batch();
     b.update(db.doc(caminho()), { voterUids: [ALICE, BOB], xpAwarded: 6 });
-    b.set(db.doc(votoPath(BOB)), { votedFor: BOB, votedAt: new Date() });
+    b.set(db.doc(votoPath(BOB)), { votedFor: BOB, votedAt: serverTimestamp() });
     await assertSucceeds(b.commit());
   });
 
@@ -932,7 +936,7 @@ describe('voto — create', () => {
     // nunca fecharia e o voto entraria escondido na apuração.
     const db = env.authenticatedContext(BOB).firestore();
     await assertFails(
-      db.doc(votoPath(BOB)).set({ votedFor: CAROL, votedAt: new Date() }),
+      db.doc(votoPath(BOB)).set({ votedFor: CAROL, votedAt: serverTimestamp() }),
     );
   });
 
@@ -940,7 +944,7 @@ describe('voto — create', () => {
     const db = env.authenticatedContext(BOB).firestore();
     const b = db.batch();
     b.update(db.doc(caminho()), { voterUids: [ALICE, BOB], xpAwarded: 6 });
-    b.set(db.doc(votoPath(CAROL)), { votedFor: ALICE, votedAt: new Date() });
+    b.set(db.doc(votoPath(CAROL)), { votedFor: ALICE, votedAt: serverTimestamp() });
     await assertFails(b.commit());
   });
 
@@ -948,7 +952,7 @@ describe('voto — create', () => {
     const db = env.authenticatedContext(BOB).firestore();
     const b = db.batch();
     b.update(db.doc(caminho()), { voterUids: [ALICE, BOB], xpAwarded: 6 });
-    b.set(db.doc(votoPath(BOB)), { votedFor: DAVE, votedAt: new Date() });
+    b.set(db.doc(votoPath(BOB)), { votedFor: DAVE, votedAt: serverTimestamp() });
     await assertFails(b.commit());
   });
 
