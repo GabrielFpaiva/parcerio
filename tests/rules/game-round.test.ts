@@ -85,6 +85,23 @@ describe('rodada — create', () => {
     const alice = env.authenticatedContext(ALICE).firestore();
     await assertFails(alice.doc(caminho()).set(rodadaNova(ALICE, { xpAwarded: 15 })));
   });
+
+  it('NEGA criar a rodada de hoje num id de outro dia', async () => {
+    // `date == date` só amarra o campo ao id. Sem `date == todayId()`, dava
+    // para cunhar quantas rodadas de 15 XP se quisesse, em ids arbitrários.
+    const alice = env.authenticatedContext(ALICE).firestore();
+    const ontem = gameDateId(Date.now() - 86_400_000);
+    await assertFails(
+      alice.doc(caminho(ontem)).set(rodadaNova(ALICE, { date: ontem })),
+    );
+  });
+
+  it('NEGA criar a rodada com campo além dos cinco permitidos', async () => {
+    // O hasOnly do update congela o documento depois, então campo injetado
+    // no create ficaria permanente naquela rodada.
+    const alice = env.authenticatedContext(ALICE).firestore();
+    await assertFails(alice.doc(caminho()).set(rodadaNova(ALICE, { winner: BOB })));
+  });
 });
 
 describe('rodada — update', () => {
@@ -141,6 +158,16 @@ describe('rodada — update', () => {
     const bob = env.authenticatedContext(BOB).firestore();
     await assertFails(
       bob.doc(caminho()).update({ voterUids: [ALICE, BOB], xpAwarded: 6, questionId: 'q001' }),
+    );
+  });
+
+  it('NEGA entrar hoje numa rodada cujo dia já virou', async () => {
+    // isRoundClosed já considera essa rodada fechada. Sem esta guarda, quem
+    // faltou ontem entra hoje e empurra o xpAwarded de 6 pra 15.
+    await seedRound(env, SPID, hoje(), rodadaNova(ALICE, { dayNumber: hojeNum() - 1 }));
+    const bob = env.authenticatedContext(BOB).firestore();
+    await assertFails(
+      bob.doc(caminho()).update({ voterUids: [ALICE, BOB], xpAwarded: 6 }),
     );
   });
 

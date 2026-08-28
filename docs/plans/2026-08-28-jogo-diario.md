@@ -535,9 +535,9 @@ git commit -m "feat(rules): protect daily-game catalog and suggestion queue"
 - Consumes: `isSignedIn()`, `isMember(data)` de `firestore.rules`; `dayNumber`,
   `questionIndexFor`, `gameDateId` da Task 1.
 - Produces: em `firestore.rules`, as funções `gameCatalogSize()`, `todayNumber()`,
-  `questionOfTheDay()`, `superPartnership(spid)`, `gameXp(voterCount, memberCount)`, e o
-  bloco `match /superPartnerships/{spid}/games/{date}`. Em `tests/rules/factories.ts`,
-  `validSuperPartnership(members: string[], overrides?)`,
+  `todayId()`, `pad2(n)`, `questionOfTheDay()`, `superPartnership(spid)`,
+  `gameXp(voterCount, memberCount)`, e o bloco `match /superPartnerships/{spid}/games/{date}`.
+  Em `tests/rules/factories.ts`, `validSuperPartnership(members: string[], overrides?)`,
   `seedSuperPartnership(env, spid, data)` e `seedRound(env, spid, date, data)`.
 
 > **Nota de acoplamento:** a fábrica abaixo materializa a forma de
@@ -691,6 +691,23 @@ describe('rodada — create', () => {
     const alice = env.authenticatedContext(ALICE).firestore();
     await assertFails(alice.doc(caminho()).set(rodadaNova(ALICE, { xpAwarded: 15 })));
   });
+
+  it('NEGA criar a rodada de hoje num id de outro dia', async () => {
+    // `date == date` só amarra o campo ao id. Sem `date == todayId()`, dava
+    // para cunhar quantas rodadas de 15 XP se quisesse, em ids arbitrários.
+    const alice = env.authenticatedContext(ALICE).firestore();
+    const ontem = gameDateId(Date.now() - 86_400_000);
+    await assertFails(
+      alice.doc(caminho(ontem)).set(rodadaNova(ALICE, { date: ontem })),
+    );
+  });
+
+  it('NEGA criar a rodada com campo além dos cinco permitidos', async () => {
+    // O hasOnly do update congela o documento depois, então campo injetado
+    // no create ficaria permanente naquela rodada.
+    const alice = env.authenticatedContext(ALICE).firestore();
+    await assertFails(alice.doc(caminho()).set(rodadaNova(ALICE, { winner: BOB })));
+  });
 });
 
 describe('rodada — update', () => {
@@ -750,6 +767,16 @@ describe('rodada — update', () => {
     );
   });
 
+  it('NEGA entrar hoje numa rodada cujo dia já virou', async () => {
+    // isRoundClosed já considera essa rodada fechada. Sem esta guarda, quem
+    // faltou ontem entra hoje e empurra o xpAwarded de 6 pra 15.
+    await seedRound(env, SPID, hoje(), rodadaNova(ALICE, { dayNumber: hojeNum() - 1 }));
+    const bob = env.authenticatedContext(BOB).firestore();
+    await assertFails(
+      bob.doc(caminho()).update({ voterUids: [ALICE, BOB], xpAwarded: 6 }),
+    );
+  });
+
   it('NEGA apagar a rodada', async () => {
     const alice = env.authenticatedContext(ALICE).firestore();
     await assertFails(alice.doc(caminho()).delete());
@@ -799,6 +826,19 @@ Em `firestore.rules`, junto às outras funções do topo (perto de `partnership(
       return int((request.time.toMillis() - 10800000) / 86400000);
     }
 
+    function pad2(n) {
+      return n < 10 ? '0' + string(n) : string(n);
+    }
+
+    // A data de hoje em America/Sao_Paulo, no formato do id do documento.
+    // É a TERCEIRA derivação da data — shared/dailyGame.ts já tem dayNumber e
+    // gameDateId. Duplicação deliberada: se as três divergirem, a suíte fica
+    // vermelha, que é o comportamento desejado.
+    function todayId() {
+      let t = request.time - duration.value(3, 'h');
+      return string(t.year()) + '-' + pad2(t.month()) + '-' + pad2(t.day());
+    }
+
     function questionOfTheDay() {
       return 'q' + string(todayNumber() % gameCatalogSize());
     }
@@ -819,13 +859,17 @@ E dentro do bloco `// ---- jogo diário ----` criado na Task 3, acrescente:
 
       allow create: if isMember(superPartnership(spid))
                     && request.resource.data.date == date
+                    && request.resource.data.date == todayId()
                     && request.resource.data.dayNumber == todayNumber()
                     && request.resource.data.questionId == questionOfTheDay()
                     && request.resource.data.voterUids == [request.auth.uid]
                     && request.resource.data.xpAwarded ==
-                         gameXp(1, superPartnership(spid).members.size());
+                         gameXp(1, superPartnership(spid).members.size())
+                    && request.resource.data.keys().hasOnly(
+                         ['date', 'dayNumber', 'questionId', 'voterUids', 'xpAwarded']);
 
       allow update: if isMember(superPartnership(spid))
+                    && resource.data.dayNumber == todayNumber()
                     && !(request.auth.uid in resource.data.voterUids)
                     && request.resource.data.voterUids ==
                          resource.data.voterUids.concat([request.auth.uid])
@@ -846,7 +890,7 @@ E dentro do bloco `// ---- jogo diário ----` criado na Task 3, acrescente:
 > `gameQuestions` seguem isso.
 
 Run: `npx firebase emulators:exec --only firestore "npx jest -c jest.rules.config.js tests/rules/game-round.test.ts"`
-Expected: PASS, 19 testes.
+Expected: PASS, 22 testes.
 
 - [ ] **Step 6: Commit**
 
