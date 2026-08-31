@@ -262,6 +262,19 @@ Leitura liberada para autenticado, escrita para ninguém.
 Seguindo a linha fechada na Spec 2, cada valor em que o cliente não pode ser confiado é
 literal fixado na regra, e cada regra tem um teste que a vê negando.
 
+**Duplicação TS ↔ regras, e o que de fato prende cada uma (revisão de 2026-08-31):** rules
+e TypeScript não compartilham código, então cinco quantidades existem nos dois lados —
+`GAME_CATALOG_SIZE`/`gameCatalogSize()`, `SP_UTC_OFFSET_MS`/o `10800000` de `todayNumber()`
+e `todayId()`, `gameDateId()`+`dayNumber()`/`todayId()`+`todayNumber()`, `GAME_XP`/`gameXp()`
+e `isRoundClosed()`/`roundClosed()`. Só a primeira estava de fato presa por teste desde o
+início. `SP_UTC_OFFSET_MS` só quebrava dentro da janela de horas em que os dois offsets
+divergentes discordam sobre a virada do dia; `GAME_XP` e `isRoundClosed` não tinham teste
+nenhum prendendo os dois lados. Fechado em `shared/__tests__/dailyGame.test.ts` (describe
+`constantes duplicadas em firestore.rules`, que afirma os literais, nunca a própria
+constante) e nos testes de rodada/voto, que agora importam `GAME_XP` de `shared/dailyGame`
+nas fixtures válidas e chamam `isRoundClosed()` ao lado de cada fixture de rodada
+aberta/fechada já testada contra a regra.
+
 | Regra | O que ela garante |
 |---|---|
 | `votes/{uid}` só é criado pelo próprio `uid` | Ninguém vota pelos outros |

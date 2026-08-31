@@ -2,7 +2,7 @@ import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import type { RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { ALICE, BOB, CAROL, createTestEnv } from './helpers';
 import { seedRound, seedSuperPartnership, seedUsers } from './factories';
-import { dayNumber, gameDateId, questionIndexFor } from '../../shared/dailyGame';
+import { GAME_XP, dayNumber, gameDateId, questionIndexFor } from '../../shared/dailyGame';
 
 const SPID = 'sp-1';
 const DAVE = 'dave-uid';
@@ -29,7 +29,7 @@ const rodadaNova = (voter: string, overrides: Record<string, unknown> = {}) => (
   dayNumber: hojeNum(),
   questionId: perguntaDeHoje(),
   voterUids: [voter],
-  xpAwarded: 6,
+  xpAwarded: GAME_XP.PARTIAL,
   ...overrides,
 });
 
@@ -76,12 +76,17 @@ describe('rodada — create', () => {
   });
 
   it('NEGA xpAwarded inflado', async () => {
+    // 500 é literal de propósito: o teste prova que QUALQUER valor errado
+    // cai, não um valor específico. Trocar por uma constante destruiria isso.
     const alice = env.authenticatedContext(ALICE).firestore();
     await assertFails(alice.doc(caminho()).set(rodadaNova(ALICE, { xpAwarded: 500 })));
   });
 
   it('NEGA xpAwarded 15 numa rodada que está só começando', async () => {
     // Um literal errado de cada vez: o resto do documento continua válido.
+    // 15 é literal de propósito — é GAME_XP.COMPLETE, mas usado onde o
+    // correto seria PARTIAL. O teste prova que o valor certo importa, então
+    // não pode usar a constante que estaria provando estar certo.
     const alice = env.authenticatedContext(ALICE).firestore();
     await assertFails(alice.doc(caminho()).set(rodadaNova(ALICE, { xpAwarded: 15 })));
   });
@@ -112,7 +117,7 @@ describe('rodada — update', () => {
   it('PERMITE que o segundo membro entre na rodada', async () => {
     const bob = env.authenticatedContext(BOB).firestore();
     await assertSucceeds(
-      bob.doc(caminho()).update({ voterUids: [ALICE, BOB], xpAwarded: 6 }),
+      bob.doc(caminho()).update({ voterUids: [ALICE, BOB], xpAwarded: GAME_XP.PARTIAL }),
     );
   });
 
@@ -120,21 +125,21 @@ describe('rodada — update', () => {
     await seedRound(env, SPID, hoje(), rodadaNova(ALICE, { voterUids: [ALICE, BOB] }));
     const carol = env.authenticatedContext(CAROL).firestore();
     await assertSucceeds(
-      carol.doc(caminho()).update({ voterUids: [ALICE, BOB, CAROL], xpAwarded: 15 }),
+      carol.doc(caminho()).update({ voterUids: [ALICE, BOB, CAROL], xpAwarded: GAME_XP.COMPLETE }),
     );
   });
 
   it('NEGA votar duas vezes', async () => {
     const alice = env.authenticatedContext(ALICE).firestore();
     await assertFails(
-      alice.doc(caminho()).update({ voterUids: [ALICE, ALICE], xpAwarded: 6 }),
+      alice.doc(caminho()).update({ voterUids: [ALICE, ALICE], xpAwarded: GAME_XP.PARTIAL }),
     );
   });
 
   it('NEGA entrar na rodada em nome de outra pessoa', async () => {
     const bob = env.authenticatedContext(BOB).firestore();
     await assertFails(
-      bob.doc(caminho()).update({ voterUids: [ALICE, CAROL], xpAwarded: 6 }),
+      bob.doc(caminho()).update({ voterUids: [ALICE, CAROL], xpAwarded: GAME_XP.PARTIAL }),
     );
   });
 
@@ -143,11 +148,14 @@ describe('rodada — update', () => {
     await seedRound(env, SPID, hoje(), rodadaNova(ALICE, { voterUids: [ALICE, BOB] }));
     const carol = env.authenticatedContext(CAROL).firestore();
     await assertFails(
-      carol.doc(caminho()).update({ voterUids: [ALICE, CAROL], xpAwarded: 6 }),
+      carol.doc(caminho()).update({ voterUids: [ALICE, CAROL], xpAwarded: GAME_XP.PARTIAL }),
     );
   });
 
   it('NEGA cobrar 15 com a rodada ainda parcial', async () => {
+    // 15 é literal de propósito: é GAME_XP.COMPLETE, cobrado onde só 2 de 3
+    // votaram. O teste prova que o valor errado é rejeitado, não pode virar
+    // a constante que estaria certa.
     const bob = env.authenticatedContext(BOB).firestore();
     await assertFails(
       bob.doc(caminho()).update({ voterUids: [ALICE, BOB], xpAwarded: 15 }),
@@ -157,7 +165,7 @@ describe('rodada — update', () => {
   it('NEGA trocar a pergunta no meio da rodada', async () => {
     const bob = env.authenticatedContext(BOB).firestore();
     await assertFails(
-      bob.doc(caminho()).update({ voterUids: [ALICE, BOB], xpAwarded: 6, questionId: 'q001' }),
+      bob.doc(caminho()).update({ voterUids: [ALICE, BOB], xpAwarded: GAME_XP.PARTIAL, questionId: 'q001' }),
     );
   });
 
@@ -167,7 +175,7 @@ describe('rodada — update', () => {
     await seedRound(env, SPID, hoje(), rodadaNova(ALICE, { dayNumber: hojeNum() - 1 }));
     const bob = env.authenticatedContext(BOB).firestore();
     await assertFails(
-      bob.doc(caminho()).update({ voterUids: [ALICE, BOB], xpAwarded: 6 }),
+      bob.doc(caminho()).update({ voterUids: [ALICE, BOB], xpAwarded: GAME_XP.PARTIAL }),
     );
   });
 

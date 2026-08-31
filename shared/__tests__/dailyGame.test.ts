@@ -55,7 +55,7 @@ describe('gameDateId', () => {
   });
 });
 
-import { GAME_XP, MS_PER_DAY, isRoundClosed, tallyVotes, xpForRound } from '../dailyGame';
+import { GAME_XP, MS_PER_DAY, SP_UTC_OFFSET_MS, isRoundClosed, tallyVotes, xpForRound } from '../dailyGame';
 
 const NA_VIRADA_2 = Date.UTC(2026, 7, 28, 3, 0, 0);
 const DIA_DA_RODADA = dayNumber(NA_VIRADA_2);
@@ -87,12 +87,15 @@ describe('isRoundClosed', () => {
 
 describe('xpForRound', () => {
   it('vale 6 enquanto está parcial', () => {
-    expect(xpForRound(1, 5)).toBe(GAME_XP.PARTIAL);
-    expect(xpForRound(4, 5)).toBe(GAME_XP.PARTIAL);
+    // Literal, não GAME_XP.PARTIAL: comparar a constante com ela mesma
+    // passaria com qualquer valor. Ver describe de constantes duplicadas
+    // mais abaixo, que é quem realmente prende esse número.
+    expect(xpForRound(1, 5)).toBe(6);
+    expect(xpForRound(4, 5)).toBe(6);
   });
 
   it('vale 15 quando todos votaram', () => {
-    expect(xpForRound(5, 5)).toBe(GAME_XP.COMPLETE);
+    expect(xpForRound(5, 5)).toBe(15);
   });
 
   it('não cresce com o tamanho do grupo — 8 votos valem o mesmo que 3', () => {
@@ -119,5 +122,24 @@ describe('tallyVotes', () => {
 
   it('devolve lista vazia quando ninguém votou', () => {
     expect(tallyVotes({})).toEqual([]);
+  });
+});
+
+describe('constantes duplicadas em firestore.rules', () => {
+  // Estes números existem duas vezes: aqui e como literal nas regras, que
+  // não conseguem importar TypeScript. O teste afirma o literal, nunca a
+  // própria constante — `toBe(GAME_XP.PARTIAL)` passaria com qualquer valor.
+
+  it('SP_UTC_OFFSET_MS bate com o 10800000 de todayNumber() e todayId()', () => {
+    expect(SP_UTC_OFFSET_MS).toBe(10_800_000);
+  });
+
+  it('GAME_CATALOG_SIZE bate com gameCatalogSize()', () => {
+    expect(GAME_CATALOG_SIZE).toBe(120);
+  });
+
+  it('GAME_XP bate com gameXp()', () => {
+    expect(GAME_XP.PARTIAL).toBe(6);
+    expect(GAME_XP.COMPLETE).toBe(15);
   });
 });

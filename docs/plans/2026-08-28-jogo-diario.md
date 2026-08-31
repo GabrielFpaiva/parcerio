@@ -41,6 +41,17 @@ Node para as regras), `@firebase/rules-unit-testing`, emulador do Firestore, Jav
   `tests/rules/helpers.ts`: se alguém mudar um sem o outro, um teste quebra — e isso é o
   comportamento desejado.
 - XP da rodada: **6** parcial, **15** completa. Do grupo, nunca do votante.
+- **Correção pós-revisão (2026-08-31):** a frase acima só era verdadeira, de fato, para
+  `GAME_CATALOG_SIZE`. `SP_UTC_OFFSET_MS`/`10800000` só quebrava um teste dentro da janela
+  de horas em que os dois offsets divergentes discordam sobre a virada do dia; `GAME_XP` e
+  `isRoundClosed`/`roundClosed()` não tinham teste nenhum prendendo os dois lados — os
+  testes de regras usavam `6`/`15` soltos, e o teste TS de `xpForRound` comparava
+  `GAME_XP.PARTIAL` com ele mesmo. Fechado em
+  `shared/__tests__/dailyGame.test.ts` (describe `constantes duplicadas em
+  firestore.rules`, que afirma os literais, nunca a constante) e em
+  `tests/rules/game-round.test.ts`/`game-votes.test.ts` (fixtures válidas importam
+  `GAME_XP` de `shared/dailyGame`, e os testes de rodada fechada/aberta também chamam
+  `isRoundClosed()` e comparam com o que a regra acabou de decidir).
 - Não usar Cloud Functions. Não introduzir dependência nova.
 - Conteúdo (nome de teste, comentário) em português; identificador em inglês.
 - Cada task termina com `npm run validate` verde antes do commit.

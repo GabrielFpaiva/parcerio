@@ -3,7 +3,7 @@ import type { RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { serverTimestamp } from 'firebase/firestore';
 import { ALICE, BOB, CAROL, createTestEnv } from './helpers';
 import { seedRound, seedSuperPartnership, seedUsers } from './factories';
-import { dayNumber, gameDateId, questionIndexFor } from '../../shared/dailyGame';
+import { GAME_XP, dayNumber, gameDateId, isRoundClosed, questionIndexFor } from '../../shared/dailyGame';
 
 const SPID = 'sp-1';
 const DAVE = 'dave-uid';
@@ -28,7 +28,7 @@ const rodadaNova = (voter: string, overrides: Record<string, unknown> = {}) => (
   dayNumber: hojeNum(),
   questionId: perguntaDeHoje(),
   voterUids: [voter],
-  xpAwarded: 6,
+  xpAwarded: GAME_XP.PARTIAL,
   ...overrides,
 });
 
@@ -48,7 +48,7 @@ describe('voto — create', () => {
   it('PERMITE votar entrando na rodada no mesmo lote', async () => {
     const db = env.authenticatedContext(BOB).firestore();
     const b = db.batch();
-    b.update(db.doc(caminho()), { voterUids: [ALICE, BOB], xpAwarded: 6 });
+    b.update(db.doc(caminho()), { voterUids: [ALICE, BOB], xpAwarded: GAME_XP.PARTIAL });
     b.set(db.doc(votoPath(BOB)), { votedFor: CAROL, votedAt: serverTimestamp() });
     await assertSucceeds(b.commit());
   });
@@ -58,7 +58,7 @@ describe('voto — create', () => {
     // produto mudou — não conserte o teste sem reler a §3 do design.
     const db = env.authenticatedContext(BOB).firestore();
     const b = db.batch();
-    b.update(db.doc(caminho()), { voterUids: [ALICE, BOB], xpAwarded: 6 });
+    b.update(db.doc(caminho()), { voterUids: [ALICE, BOB], xpAwarded: GAME_XP.PARTIAL });
     b.set(db.doc(votoPath(BOB)), { votedFor: BOB, votedAt: serverTimestamp() });
     await assertSucceeds(b.commit());
   });
@@ -79,7 +79,7 @@ describe('voto — create', () => {
     await seedRound(env, SPID, hoje(), rodadaNova(ALICE, { voterUids: [ALICE, CAROL] }));
     const db = env.authenticatedContext(BOB).firestore();
     const b = db.batch();
-    b.update(db.doc(caminho()), { voterUids: [ALICE, CAROL, BOB], xpAwarded: 15 });
+    b.update(db.doc(caminho()), { voterUids: [ALICE, CAROL, BOB], xpAwarded: GAME_XP.COMPLETE });
     b.set(db.doc(votoPath(CAROL)), { votedFor: ALICE, votedAt: serverTimestamp() });
     await assertFails(b.commit());
   });
@@ -98,7 +98,7 @@ describe('voto — create', () => {
   it('NEGA votar em quem não é do grupo', async () => {
     const db = env.authenticatedContext(BOB).firestore();
     const b = db.batch();
-    b.update(db.doc(caminho()), { voterUids: [ALICE, BOB], xpAwarded: 6 });
+    b.update(db.doc(caminho()), { voterUids: [ALICE, BOB], xpAwarded: GAME_XP.PARTIAL });
     b.set(db.doc(votoPath(BOB)), { votedFor: DAVE, votedAt: serverTimestamp() });
     await assertFails(b.commit());
   });
@@ -106,7 +106,7 @@ describe('voto — create', () => {
   it('NEGA votedAt escolhido pelo cliente', async () => {
     const db = env.authenticatedContext(BOB).firestore();
     const b = db.batch();
-    b.update(db.doc(caminho()), { voterUids: [ALICE, BOB], xpAwarded: 6 });
+    b.update(db.doc(caminho()), { voterUids: [ALICE, BOB], xpAwarded: GAME_XP.PARTIAL });
     b.set(db.doc(votoPath(BOB)), {
       votedFor: CAROL,
       votedAt: new Date(Date.now() + 86_400_000),
@@ -119,7 +119,7 @@ describe('voto — create', () => {
     // mesmo risco que questionSuggestions e a criação da rodada já fecham.
     const db = env.authenticatedContext(BOB).firestore();
     const b = db.batch();
-    b.update(db.doc(caminho()), { voterUids: [ALICE, BOB], xpAwarded: 6 });
+    b.update(db.doc(caminho()), { voterUids: [ALICE, BOB], xpAwarded: GAME_XP.PARTIAL });
     b.set(db.doc(votoPath(BOB)), {
       votedFor: CAROL,
       votedAt: serverTimestamp(),
@@ -178,12 +178,18 @@ describe('voto — read', () => {
   it('NEGA ler o voto de OUTRO faltando exatamente uma pessoa', async () => {
     // O caso que importa: com 2 de 3, a rodada ainda está aberta.
     await semearVotos([ALICE, BOB]);
+    // Acopla isRoundClosed() a roundClosed(): com a mesma forma de rodada
+    // que a regra acabou de negar, a versão TS também tem que dizer "aberta".
+    expect(isRoundClosed({ voterCount: 2, memberCount: 3, roundDayNumber: hojeNum() }, Date.now())).toBe(false);
     const bob = env.authenticatedContext(BOB).firestore();
     await assertFails(bob.doc(votoPath(ALICE)).get());
   });
 
   it('PERMITE ler o voto de outro depois que todos votaram', async () => {
-    await semearVotos([ALICE, BOB, CAROL], { xpAwarded: 15 });
+    await semearVotos([ALICE, BOB, CAROL], { xpAwarded: GAME_XP.COMPLETE });
+    // Acopla isRoundClosed() a roundClosed(): com a mesma forma de rodada
+    // que a regra acabou de liberar, a versão TS também tem que dizer "fechada".
+    expect(isRoundClosed({ voterCount: 3, memberCount: 3, roundDayNumber: hojeNum() }, Date.now())).toBe(true);
     const bob = env.authenticatedContext(BOB).firestore();
     await assertSucceeds(bob.doc(votoPath(ALICE)).get());
   });
@@ -214,13 +220,13 @@ describe('voto — read', () => {
   });
 
   it('PERMITE listar os votos depois de fechada', async () => {
-    await semearVotos([ALICE, BOB, CAROL], { xpAwarded: 15 });
+    await semearVotos([ALICE, BOB, CAROL], { xpAwarded: GAME_XP.COMPLETE });
     const bob = env.authenticatedContext(BOB).firestore();
     await assertSucceeds(bob.collection(`superPartnerships/${SPID}/games/${hoje()}/votes`).get());
   });
 
   it('NEGA que quem não é do grupo leia voto de rodada fechada', async () => {
-    await semearVotos([ALICE, BOB, CAROL], { xpAwarded: 15 });
+    await semearVotos([ALICE, BOB, CAROL], { xpAwarded: GAME_XP.COMPLETE });
     const dave = env.authenticatedContext(DAVE).firestore();
     await assertFails(dave.doc(votoPath(ALICE)).get());
   });
@@ -228,7 +234,7 @@ describe('voto — read', () => {
   it('NEGA que quem não é do grupo LISTE os votos de rodada fechada', async () => {
     // Sem o isMember no list, qualquer logado lê todos os votos de qualquer
     // rodada fechada — e é o list que a apuração usa, não o get.
-    await semearVotos([ALICE, BOB, CAROL], { xpAwarded: 15 });
+    await semearVotos([ALICE, BOB, CAROL], { xpAwarded: GAME_XP.COMPLETE });
     const dave = env.authenticatedContext(DAVE).firestore();
     await assertFails(dave.collection(`superPartnerships/${SPID}/games/${hoje()}/votes`).get());
   });
