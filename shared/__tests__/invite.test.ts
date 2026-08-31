@@ -30,6 +30,18 @@ describe('generateInviteCode', () => {
     expect(generateInviteCode(() => 0.9999)).toBe('Z'.repeat(INVITE_CODE_LENGTH));
   });
 
+  it('com a fonte padrão (CSPRNG), gera códigos do alfabeto, no tamanho certo, e diferentes a cada chamada', () => {
+    // Não dá para testar "é imprevisível" — só o contrato: alfabeto certo,
+    // tamanho certo, e que duas chamadas seguidas não caem no mesmo código.
+    const a = generateInviteCode();
+    const b = generateInviteCode();
+    for (const code of [a, b]) {
+      expect(code).toHaveLength(INVITE_CODE_LENGTH);
+      for (const c of code) expect(INVITE_ALPHABET).toContain(c);
+    }
+    expect(a).not.toBe(b);
+  });
+
   it('não repete em 500 gerações', () => {
     const codes = new Set(Array.from({ length: 500 }, () => generateInviteCode()));
     expect(codes.size).toBe(500);

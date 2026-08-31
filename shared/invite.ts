@@ -1,3 +1,5 @@
+import * as Crypto from 'expo-crypto';
+
 /** Base32 de Crockford: sem I, L, O e U. O código é digitado à mão. */
 export const INVITE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 export const INVITE_CODE_LENGTH = 8;
@@ -13,7 +15,26 @@ export interface InviteCheckInput {
   createdAtMs: number;
 }
 
-export function generateInviteCode(random: () => number = Math.random): string {
+/**
+ * Fonte padrão de aleatoriedade para o código de convite: um CSPRNG via
+ * expo-crypto, não o Math.random do motor JS (Hermes/V8), que é um PRNG
+ * com estado previsível a partir de saídas observadas. O código de convite
+ * é a única credencial que autoriza a parceria — e a regra do Firestore
+ * (`invites/{code}`) depende inteiramente de ele ser imprevisível.
+ *
+ * Um byte tem 256 valores e o alfabeto tem 32 (INVITE_ALPHABET.length):
+ * 256 é múltiplo exato de 32, então `byte % 32` cai com a mesma
+ * probabilidade em cada índice — sem viés e sem precisar de rejection
+ * sampling. Isso deixa de valer se INVITE_ALPHABET mudar para um tamanho
+ * que não seja potência de 2.
+ */
+function secureRandom(): number {
+  const byte = Crypto.getRandomBytes(1)[0];
+  if (byte === undefined) throw new Error('expo-crypto não retornou nenhum byte aleatório');
+  return (byte % INVITE_ALPHABET.length) / INVITE_ALPHABET.length;
+}
+
+export function generateInviteCode(random: () => number = secureRandom): string {
   let code = '';
   for (let i = 0; i < INVITE_CODE_LENGTH; i += 1) {
     code += INVITE_ALPHABET[Math.floor(random() * INVITE_ALPHABET.length)];
