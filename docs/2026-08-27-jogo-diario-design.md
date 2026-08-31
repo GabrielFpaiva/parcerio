@@ -191,6 +191,19 @@ sustenta é pior que ausência de promessa.
 
 Voto aberto também é onde o jogo é divertido: a graça é saber quem te apontou.
 
+### Correção de 2026-08-31: o acoplamento tinha que ser dos dois lados
+
+"Escondido até fechar" tem uma pré-condição que a primeira versão da regra não escrevia:
+ninguém pode entrar em `voterUids` sem ter de fato votado. A versão original só prendia um
+sentido — o voto exigia (via `getAfter`) já constar em `voterUids` — mas o `create` e o
+`update` da rodada não exigiam nada sobre a existência de um voto. Um membro conseguia
+fazer um `update` solteiro na rodada, só se acrescentando a `voterUids` e subindo
+`xpAwarded`, sem nunca escrever um voto. Isso batia o `hasAll` de `roundClosed()` com um
+voto a menos de verdade — a rodada "fechava", essa pessoa lia o voto de todo mundo antes
+de ter votado, e o grupo recebia XP de rodada completa por uma que não completou. Ver §8
+para a correção (`existsAfter` no `create` e no `update` da rodada, fechando o outro
+sentido do acoplamento).
+
 ---
 
 ## 7. Modelo de dados
@@ -288,6 +301,7 @@ aberta/fechada já testada contra a regra.
 | `update` exige que o `dayNumber` da rodada seja o de hoje | Rodada que o domínio já considera fechada não continua gravável |
 | Quem lista os votos tem que ser do grupo | `list` é o caminho da apuração; sem essa guarda, um estranho lê a rodada fechada inteira |
 | `create` de rodada e de voto só aceita as chaves previstas (`hasOnly`) | Documento não vira depósito de campo arbitrário — e como o `update` congela o resto, campo injetado no nascimento seria permanente |
+| `create` e `update` da rodada exigem `existsAfter(votes/{auth.uid})` | Fecha o outro sentido do acoplamento (correção de 2026-08-31, §6): sem isto dava para constar em `voterUids` sem nunca escrever um voto |
 
 Três dessas guardas não estavam neste documento quando ele foi escrito: o id fixado no dia,
 o `dayNumber` no update e as allowlists. Saíram da revisão da implementação, e as duas
@@ -304,9 +318,26 @@ No dia em que a Spec 6 permitir sair do grupo, um membro saindo no meio da rodad
 contagem bater o quórum com alguém presente que não votou — os votos abririam cedo, que é a
 morte do jogo, e sem erro nenhum.
 
-O voto e o `voterUids` são escritos **na mesma transação**. A Spec 2 já provou com
-`getAfter()` que a regra enxerga o estado pós-transação, então a regra do voto consegue
-exigir que o `voterUids` correspondente esteja sendo escrito junto.
+O voto e o `voterUids` são escritos **na mesma transação**, e o acoplamento entre os dois
+tem que valer **nos dois sentidos** — este é o Finding 1 da revisão de 2026-08-31, que
+sem a correção abaixo derrotava a feature inteira:
+
+- **Voto → rodada** (já existia): a Spec 2 provou com `getAfter()` que a regra enxerga o
+  estado pós-transação, então a regra do voto exige que o `voterUids` correspondente
+  esteja sendo escrito junto (`getAfter(rodada).voterUids.hasAll([voter])`).
+- **Rodada → voto** (faltava): o `create` e o `update` da rodada agora exigem, com
+  `existsAfter()`, que o voto do próprio `auth.uid` exista depois da transação —
+  `existsAfter(.../votes/$(request.auth.uid))`. Sem isto, um membro conseguia se
+  acrescentar a `voterUids` e subir `xpAwarded` num `update` solteiro, sem nunca escrever
+  um voto: `roundClosed()` batia o `hasAll` com um voto a menos de verdade, essa pessoa
+  lia o voto de todo mundo antes de ter votado, e a rodada pagava XP de completa por uma
+  que não completou.
+
+`existsAfter`, assim como `getAfter`, enxerga o estado hipotético pós-lote inteiro — inclui
+o que o próprio lote está tentando escrever, não só o que já existe no banco. Verificado
+contra o emulador em 31/08/2026, num teste isolado antes de ir para `firestore.rules`: um
+`create`/`update` solteiro da rodada, sem o voto no mesmo lote, é negado; o mesmo par
+escrito num lote batch, junto com o voto do autor, passa.
 
 ### O que testar com mutação, especificamente
 
@@ -322,6 +353,8 @@ nada. Cada guarda abaixo precisa do seu próprio teste, com o resto do documento
 - Remover um uid de `voterUids` mantendo o próprio voto intacto.
 - Escrever `xpAwarded` fora dos literais, um literal errado de cada vez.
 - Criar a rodada com o `questionId` de ontem e com o de amanhã.
+- Abrir a rodada (`create`) com um `set` solteiro, sem o voto no mesmo lote.
+- Entrar em `voterUids` (`update`) com um `update` solteiro, sem o voto no mesmo lote.
 
 ---
 

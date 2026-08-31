@@ -155,13 +155,22 @@ service cloud.firestore {
       allow get:  if isSignedIn();
       allow list: if false;
 
+      // Qualquer autenticado dá `get` num invite pelo código (é assim que o
+      // convidado vê quem chamou), então este documento é lido por gente de
+      // fora do par convite/convidado. Sem o hasOnly, um cliente colaria
+      // campo arbitrário aqui e outra pessoa o leria — mesmo risco que
+      // questionSuggestions e a criação da rodada já fecham.
       allow create: if isOwner(request.resource.data.fromUid)
                     && request.resource.data.code == code
                     && request.resource.data.usedBy == null
                     && request.resource.data.status == 'pending'
                     && request.resource.data.maxUses == 1
                     && request.resource.data.createdAt == request.time
-                    && matchesOwnProfile(request.resource.data.fromProfile);
+                    && matchesOwnProfile(request.resource.data.fromProfile)
+                    && request.resource.data.keys().hasOnly(
+                         ['code', 'fromUid', 'fromProfile', 'createdAt', 'usedBy', 'status', 'maxUses'])
+                    && request.resource.data.fromProfile.keys().hasOnly(
+                         ['displayName', 'photoURL', 'avatarEmoji', 'handle']);
 
       // Só a transição pendente → usado, e só por quem não é o dono.
       // isSignedIn() aqui é defesa em profundidade, não a única barreira:
@@ -202,12 +211,49 @@ service cloud.firestore {
       allow read, update, delete: if false;
     }
 
-    // A Spec 6 é quem define leitura e escrita do documento da Super Parceria
-    // em si. Aqui só existe o que o jogo diário precisa.
+    // A Spec 6 é quem é dona deste documento — quando ela for escrita, este
+    // bloco provavelmente cresce. Até lá, ele existe só para não deixar
+    // `members` mutável por acidente: sem uma regra explícita aqui, o path
+    // caía no catch-all (`allow read, write: if false` no fim do arquivo),
+    // que por coincidência também bloqueava update — proteção sem intenção,
+    // fácil de perder quando alguém escrever a regra de verdade sem saber
+    // o que depende de `members` não mudar. Duas coisas dependem: a
+    // roundClosed() acima compara `voterUids.hasAll(members)`, e gameXp()
+    // lê `members.size()` ao vivo em cada write da rodada. Um membro saindo
+    // no meio de uma rodada, com `members` mutável, travaria `xpAwarded` em
+    // 6 para sempre — todo mundo que ficou já votou, então nenhum update
+    // novo bateria mais o quórum. `members` é imutável pela vida inteira da
+    // Super Parceria até a Spec 6 decidir o contrário de propósito.
+    match /superPartnerships/{spid} {
+      allow read: if isMember(resource.data);
+      allow create, delete: if false;
+      allow update: if false;
+    }
+
+    // O resto do que a Spec 6 vai precisar do documento acima (nome, emoji,
+    // status, xparceria de grupo etc.) continua em aberto — aqui só existe
+    // o que o jogo diário precisa.
     match /superPartnerships/{spid}/games/{date} {
       allow read: if isMember(superPartnership(spid));
 
+      // O create e o update só amarravam voterUids -> voto num sentido: o
+      // voto exige (via getAfter, abaixo) que o votante já esteja em
+      // voterUids, mas nada aqui exigia o inverso. Sem o existsAfter, dava
+      // para entrar em voterUids sozinho, sem nunca escrever um voto — a
+      // rodada fechava (hasAll batia) e quem fez isso lia o voto de todo
+      // mundo antes de votar. O existsAfter fecha o outro sentido: exige que
+      // o voto do próprio uid já exista depois da transação, então voto e
+      // entrada em voterUids só acontecem juntos, dos dois lados.
+      // "Super Parceria é trio ou mais" (§2 do design doc) é convenção de
+      // produto, nada aqui a fazia valer. Sem isto, gameXp(1, members.size())
+      // pagando 15 para um grupo de 1 membro só ficava inalcançável porque
+      // nenhum fluxo de hoje cria Super Parceria fora de 3–8 — um caso vivo,
+      // não um caso impossível. Pinar os limites aqui faz o caso deixar de
+      // existir, em vez de continuar dependendo de uma convenção que nenhum
+      // código prende.
       allow create: if isMember(superPartnership(spid))
+                    && superPartnership(spid).members.size() >= 3
+                    && superPartnership(spid).members.size() <= 8
                     && request.resource.data.date == date
                     && request.resource.data.date == todayId()
                     && request.resource.data.dayNumber == todayNumber()
@@ -216,9 +262,13 @@ service cloud.firestore {
                     && request.resource.data.xpAwarded ==
                          gameXp(1, superPartnership(spid).members.size())
                     && request.resource.data.keys().hasOnly(
-                         ['date', 'dayNumber', 'questionId', 'voterUids', 'xpAwarded']);
+                         ['date', 'dayNumber', 'questionId', 'voterUids', 'xpAwarded'])
+                    && existsAfter(
+                         /databases/$(database)/documents/superPartnerships/$(spid)/games/$(date)/votes/$(request.auth.uid));
 
       allow update: if isMember(superPartnership(spid))
+                    && superPartnership(spid).members.size() >= 3
+                    && superPartnership(spid).members.size() <= 8
                     && resource.data.dayNumber == todayNumber()
                     && !(request.auth.uid in resource.data.voterUids)
                     && request.resource.data.voterUids ==
@@ -227,7 +277,9 @@ service cloud.firestore {
                          gameXp(request.resource.data.voterUids.size(),
                                 superPartnership(spid).members.size())
                     && request.resource.data.diff(resource.data)
-                         .affectedKeys().hasOnly(['voterUids', 'xpAwarded']);
+                         .affectedKeys().hasOnly(['voterUids', 'xpAwarded'])
+                    && existsAfter(
+                         /databases/$(database)/documents/superPartnerships/$(spid)/games/$(date)/votes/$(request.auth.uid));
 
       allow delete: if false;
 
