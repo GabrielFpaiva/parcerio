@@ -1,7 +1,7 @@
 import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import type { RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { serverTimestamp } from 'firebase/firestore';
-import { ALICE, BOB, CAROL, createTestEnv } from './helpers';
+import { ALICE, BOB, CAROL, createTestEnv, evitarViradaDeDia } from './helpers';
 import { seedRound, seedSuperPartnership, seedUsers } from './factories';
 import { GAME_XP, dayNumber, gameDateId, isRoundClosed, questionIndexFor } from '../../shared/dailyGame';
 
@@ -14,6 +14,10 @@ beforeAll(async () => { env = await createTestEnv(); });
 afterAll(() => env.cleanup());
 
 beforeEach(async () => {
+  // Finding 6: perto da virada de São Paulo, hoje()/hojeNum() (que leem
+  // Date.now() abaixo) podem discordar do request.time que a regra vai ver
+  // no momento da escrita. Evita a janela em vez de arriscar.
+  await evitarViradaDeDia();
   await env.clearFirestore();
   await seedUsers(env, [ALICE, BOB, CAROL, DAVE]);
   await seedSuperPartnership(env, SPID, [ALICE, BOB, CAROL]);
@@ -74,12 +78,20 @@ describe('voto — create', () => {
 
   it('NEGA votar no lugar de outra pessoa', async () => {
     // A Carol JÁ está em voterUids, então o getAfter passa e a única guarda
-    // que pode derrubar isto é o isOwner. Antes, com a Carol fora da lista,
-    // as duas falhavam juntas e o teste continuaria verde sem o isOwner.
+    // que pode derrubar a escrita em votes/CAROL é o isOwner. Antes, com a
+    // Carol fora da lista, as duas falhavam juntas e o teste continuaria
+    // verde sem o isOwner.
+    //
+    // Desde o Finding 1, o update da rodada também exige existsAfter(votes/
+    // BOB) — sem o voto de BOB no mesmo lote, o update falharia por ISSO
+    // também, e o teste deixaria de isolar o isOwner. O voto de BOB abaixo
+    // existe só para satisfazer aquela guarda; a negação continua vindo
+    // inteira do isOwner ao tentar escrever votes/CAROL como BOB.
     await seedRound(env, SPID, hoje(), rodadaNova(ALICE, { voterUids: [ALICE, CAROL] }));
     const db = env.authenticatedContext(BOB).firestore();
     const b = db.batch();
     b.update(db.doc(caminho()), { voterUids: [ALICE, CAROL, BOB], xpAwarded: GAME_XP.COMPLETE });
+    b.set(db.doc(votoPath(BOB)), { votedFor: ALICE, votedAt: serverTimestamp() });
     b.set(db.doc(votoPath(CAROL)), { votedFor: ALICE, votedAt: serverTimestamp() });
     await assertFails(b.commit());
   });
@@ -180,7 +192,9 @@ describe('voto — read', () => {
     await semearVotos([ALICE, BOB]);
     // Acopla isRoundClosed() a roundClosed(): com a mesma forma de rodada
     // que a regra acabou de negar, a versão TS também tem que dizer "aberta".
-    expect(isRoundClosed({ voterCount: 2, memberCount: 3, roundDayNumber: hojeNum() }, Date.now())).toBe(false);
+    expect(
+      isRoundClosed({ voterUids: [ALICE, BOB], members: [ALICE, BOB, CAROL], roundDayNumber: hojeNum() }, Date.now()),
+    ).toBe(false);
     const bob = env.authenticatedContext(BOB).firestore();
     await assertFails(bob.doc(votoPath(ALICE)).get());
   });
@@ -189,7 +203,12 @@ describe('voto — read', () => {
     await semearVotos([ALICE, BOB, CAROL], { xpAwarded: GAME_XP.COMPLETE });
     // Acopla isRoundClosed() a roundClosed(): com a mesma forma de rodada
     // que a regra acabou de liberar, a versão TS também tem que dizer "fechada".
-    expect(isRoundClosed({ voterCount: 3, memberCount: 3, roundDayNumber: hojeNum() }, Date.now())).toBe(true);
+    expect(
+      isRoundClosed(
+        { voterUids: [ALICE, BOB, CAROL], members: [ALICE, BOB, CAROL], roundDayNumber: hojeNum() },
+        Date.now(),
+      ),
+    ).toBe(true);
     const bob = env.authenticatedContext(BOB).firestore();
     await assertSucceeds(bob.doc(votoPath(ALICE)).get());
   });

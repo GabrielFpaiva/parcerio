@@ -61,9 +61,14 @@ const NA_VIRADA_2 = Date.UTC(2026, 7, 28, 3, 0, 0);
 const DIA_DA_RODADA = dayNumber(NA_VIRADA_2);
 
 describe('isRoundClosed', () => {
+  // members/voterUids são identidades, não contagens — mesma forma que
+  // roundClosed() usa nas regras (hasAll). `membros(n)` gera n uids
+  // sintéticos; `rodada` monta o RoundState a partir de quantos deles já
+  // votaram, na ordem, só para os testes que ainda pensam em quórum.
+  const membros = (n: number) => Array.from({ length: n }, (_, i) => `u${i}`);
   const rodada = (voterCount: number, memberCount: number) => ({
-    voterCount,
-    memberCount,
+    voterUids: membros(memberCount).slice(0, voterCount),
+    members: membros(memberCount),
     roundDayNumber: DIA_DA_RODADA,
   });
 
@@ -82,6 +87,21 @@ describe('isRoundClosed', () => {
   it('continua aberta às 23:59:59 do próprio dia', () => {
     const quaseVirada = NA_VIRADA_2 + MS_PER_DAY - 1000;
     expect(isRoundClosed(rodada(1, 4), quaseVirada)).toBe(false);
+  });
+
+  it('NÃO fecha por um uid de quem já saiu do grupo — containment, não contagem', () => {
+    // Finding 2: a rodada carrega ['alice', 'bob', 'saiu'] em voterUids —
+    // 'saiu' votou e depois deixou o grupo. members hoje é só
+    // ['alice', 'bob', 'carol']. Contar bateria 3 >= 3 e fecharia a rodada
+    // sem a Carol ter votado; a versão antiga (voterCount/memberCount) dizia
+    // isso. hasAll nega, porque 'carol' não está em voterUids — é o mesmo
+    // caso que o comentário de roundClosed() nas regras descreve.
+    const round = {
+      voterUids: ['alice', 'bob', 'saiu'],
+      members: ['alice', 'bob', 'carol'],
+      roundDayNumber: DIA_DA_RODADA,
+    };
+    expect(isRoundClosed(round, NA_VIRADA_2)).toBe(false);
   });
 });
 

@@ -77,6 +77,24 @@ describe('invites — create', () => {
     const anon = env.unauthenticatedContext().firestore();
     await assertFails(anon.doc('invites/AB3D4F7H').set(validInvite(ALICE)));
   });
+
+  it('NEGA campo além dos sete previstos no convite', async () => {
+    // Qualquer autenticado dá `get` num invite por código — sem o hasOnly,
+    // um campo extra aqui seria lido por gente de fora do par
+    // convite/convidado, igual ao risco que hasOnly já fecha em
+    // questionSuggestions e na criação da rodada.
+    const alice = env.authenticatedContext(ALICE).firestore();
+    await assertFails(
+      alice.doc('invites/AB3D4F7H').set({ ...validInvite(ALICE), nota: 'campo extra' }),
+    );
+  });
+
+  it('NEGA campo além dos quatro previstos em fromProfile', async () => {
+    const alice = env.authenticatedContext(ALICE).firestore();
+    const comCampoExtra = validInvite(ALICE);
+    (comCampoExtra.fromProfile as Record<string, unknown>).bio = 'campo extra';
+    await assertFails(alice.doc('invites/AB3D4F7H').set(comCampoExtra));
+  });
 });
 
 describe('invites — read', () => {

@@ -39,17 +39,28 @@ export const GAME_XP = {
 } as const;
 
 export interface RoundState {
-  voterCount: number;
-  memberCount: number;
+  voterUids: string[];
+  members: string[];
   roundDayNumber: number;
 }
 
 /**
  * Fechamento é derivado, nunca escrito por um job: não há Cloud Functions.
  * Mesma estratégia do decaimento preguiçoso da Temperatura.
+ *
+ * Containment (hasAll), não comparação de tamanhos — mesma correção que o
+ * commit 39ce937 fez em roundClosed() nas regras, e pela mesma razão: contar
+ * é proxy de "todo mundo votou" e só funciona enquanto voterUids e members
+ * não puderem divergir. Uma rodada que carrega um uid de alguém que já saiu
+ * do grupo bate o quórum por tamanho sem que todo membro atual tenha
+ * votado — o cliente revelaria a rodada, e a regra (que já usa hasAll)
+ * negaria a leitura da lista. Comparar identidades, não contagens, é o que
+ * mantém os dois lados dizendo a mesma coisa.
  */
 export function isRoundClosed(round: RoundState, nowMs: number): boolean {
-  return round.voterCount >= round.memberCount || dayNumber(nowMs) > round.roundDayNumber;
+  const votantes = new Set(round.voterUids);
+  const todosVotaram = round.members.every((uid) => votantes.has(uid));
+  return todosVotaram || dayNumber(nowMs) > round.roundDayNumber;
 }
 
 export function xpForRound(voterCount: number, memberCount: number): number {

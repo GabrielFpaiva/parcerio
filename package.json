@@ -8,6 +8,7 @@
     "expo": "~57.0.10",
     "expo-blur": "~57.0.2",
     "expo-constants": "~57.0.9",
+    "expo-crypto": "~57.0.2",
     "expo-haptics": "~57.0.1",
     "expo-image": "~57.0.2",
     "expo-linking": "~57.0.5",
@@ -52,6 +53,9 @@
   "private": true,
   "jest": {
     "preset": "jest-expo",
-    "testPathIgnorePatterns": ["/node_modules/", "<rootDir>/tests/rules/"]
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "<rootDir>/tests/rules/"
+    ]
   }
 }
