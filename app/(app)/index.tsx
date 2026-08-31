@@ -3,7 +3,7 @@ import { Text, View } from 'react-native';
 export default function MapPlaceholder() {
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-      <Text>ParcerIA</Text>
+      <Text>Parcerio</Text>
     </View>
   );
 }

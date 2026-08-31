@@ -9,13 +9,13 @@ tags:
 status: active
 ---
 
-# ParcerIA — Spec 1 (Fundação) — Plano de Implementação
+# Parcerio — Spec 1 (Fundação) — Plano de Implementação
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 > Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Entregar a fundação do ParcerIA — projeto Expo rodando no Expo Go, design
+**Goal:** Entregar a fundação do Parcerio — projeto Expo rodando no Expo Go, design
 system tipado, Firebase conectado, autenticação com sessão persistente e perfil de
 usuário com handle único — com as security rules do Firestore cobertas por uma suíte de
 testes de **negação**.
@@ -166,7 +166,7 @@ lados sem arrastar dependência.
 
 - [ ] **Step 1: Gerar o scaffold dentro da pasta existente**
 
-`01 - Projects/parceria/` **já existe** com `docs/` dentro (spec e este plano), e o
+`01 - Projects/parcerio/` **já existe** com `docs/` dentro (spec e este plano), e o
 `create-expo-app` recusa diretório não vazio. O repositório git e a branch
 `feat/spec-1-fundacao` também já foram criados no setup. Por isso: gerar num diretório
 temporário e trazer o conteúdo para cá.
@@ -317,7 +317,7 @@ import { Text, View } from 'react-native';
 export default function MapPlaceholder() {
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-      <Text>ParcerIA</Text>
+      <Text>Parcerio</Text>
     </View>
   );
 }
@@ -334,7 +334,7 @@ import MapPlaceholder from '../../../app/(app)/index';
 describe('scaffold', () => {
   it('renderiza a rota placeholder', () => {
     render(<MapPlaceholder />);
-    expect(screen.getByText('ParcerIA')).toBeTruthy();
+    expect(screen.getByText('Parcerio')).toBeTruthy();
   });
 });
 ```
@@ -347,7 +347,7 @@ Expected: `tsc` sem erros; 1 teste passando.
 - [ ] **Step 9: Rodar no Expo Go e confirmar visualmente**
 
 Run: `npx expo start`
-Expected: ler o QR code no celular, o app abre no Expo Go e mostra "ParcerIA".
+Expected: ler o QR code no celular, o app abre no Expo Go e mostra "Parcerio".
 **Este passo não pode ser pulado** — é o único que prova que a premissa do projeto
 inteiro (rodar no Expo Go) se sustenta.
 
@@ -2939,6 +2939,6 @@ instalar o **Temurin** (Task 5, Step 1) e criar o **projeto no console do Fireba
 
 ---
 
-*Plano da Spec 1 (Fundação) — ParcerIA. Próxima: Spec 2 (Parceria — convite, deep link,
+*Plano da Spec 1 (Fundação) — Parcerio. Próxima: Spec 2 (Parceria — convite, deep link,
 aceite, cerimônia de nascimento, Cloud Functions).*
 

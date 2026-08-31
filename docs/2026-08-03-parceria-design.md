@@ -12,7 +12,7 @@ tags:
 status: active
 ---
 
-# ParcerIA — Documento de Produto e Arquitetura
+# Parcerio — Documento de Produto e Arquitetura
 
 > Documento de primeira entrega. Define visão, produto, arquitetura, dados e roadmap
 > **antes** de qualquer linha de código. A implementação é decomposta em 6 specs
@@ -60,7 +60,7 @@ Todo app de localização responde à pergunta **"onde essa pessoa está?"**. Li
 Buscar, Zenly: a resposta é um ponto no mapa, e o ponto não significa nada. Por isso
 ninguém abre o Life360 por prazer — abre por vigilância, culpa ou preocupação.
 
-O ParcerIA responde outra pergunta:
+O Parcerio responde outra pergunta:
 
 > **Como está minha amizade com aquela pessoa?**
 
@@ -120,7 +120,7 @@ A dor concreta não é "não sei onde meus amigos estão". É:
 > *"A gente era inseparável e hoje se fala por story. Ninguém chama ninguém porque
 > chamar dá trabalho e parece carência."*
 
-O ParcerIA remove o custo social de tomar a iniciativa. Não é você que está sendo
+O Parcerio remove o custo social de tomar a iniciativa. Não é você que está sendo
 carente — é o app dizendo que a parceria esfriou. A responsabilidade sai da pessoa.
 
 ### Por que esse núcleo, e não "todo mundo"
@@ -148,7 +148,7 @@ qualquer momento por qualquer lado, sem histórico de rota, sem alerta de "saiu 
 
 ## 3. Diferenciais competitivos
 
-| | Zenly (†2023) | Life360 | Buscar (Apple) | Snapchat | **ParcerIA** |
+| | Zenly (†2023) | Life360 | Buscar (Apple) | Snapchat | **Parcerio** |
 |---|---|---|---|---|---|
 | Pergunta central | Onde você está? | Você está seguro? | Onde está meu iPhone? | O que rolou hoje? | **Como está nossa amizade?** |
 | Unidade do produto | Pessoa | Família | Dispositivo | Conversa | **Parceria** |
@@ -1530,7 +1530,7 @@ Claude via Cloud Function, para o que regra não faz:
 Um clone copia o mapa e a barra de XP em duas semanas. O que não se copia é o **histórico
 de comportamento de milhares de amizades reais** — que padrão precede um esfriamento,
 que missão é aceita por qual tipo de dupla, qual horário de notificação converte em
-encontro. Esse dado só se acumula com o tempo e é o que, no futuro, permite ao ParcerIA
+encontro. Esse dado só se acumula com o tempo e é o que, no futuro, permite ao Parcerio
 prever esfriamento antes de ele acontecer.
 
 E é aí que o nome deixa de ser trocadilho: **a IA não gerencia a amizade, ela avisa a
@@ -1556,7 +1556,7 @@ significar dinheiro — e o produto inteiro perde o sentido.
 Isso descarta boa parte das monetizações fáceis de app social. É um custo aceito
 conscientemente.
 
-### ParcerIA+ — R$ 12,90/mês ou R$ 89/ano
+### Parcerio+ — R$ 12,90/mês ou R$ 89/ano
 
 | Benefício | Categoria |
 |---|---|
@@ -1626,7 +1626,7 @@ freeze automático.
 funil de onboarding, ritual cumprido/dia, encontros confirmados, missões
 aceitas/ignoradas, desafios resolvidos, D1/D7/D30, desinstalação.
 
-Ao final, **survey de uma pergunta**: *"O ParcerIA fez você encontrar seus amigos mais
+Ao final, **survey de uma pergunta**: *"O Parcerio fez você encontrar seus amigos mais
 vezes? (sim / não / não sei)"*. Abaixo de 40% de "sim", a mecânica é revista antes de
 qualquer código novo — não se constrói V1 sobre hipótese não validada.
 
@@ -1647,7 +1647,7 @@ retrospectiva anual compartilhável, cards de compartilhamento, cápsula do temp
 ### V1.0 público · semanas 21 a 26
 
 App Store e Play Store, LGPD e política de privacidade, exclusão de conta e exportação de
-dados, ParcerIA+, onboarding refinado, i18n (pt-BR + en), suporte, observabilidade
+dados, Parcerio+, onboarding refinado, i18n (pt-BR + en), suporte, observabilidade
 (Crashlytics + Sentry).
 
 ### O que fica de fora, e por quê
@@ -1727,7 +1727,7 @@ Parceria e os modais de compartilhamento). Cada uma tem estado vazio, de carrega
 
 ## 20. Melhorias e ideias adicionais
 
-Ideias que não estavam no escopo original e que, na minha avaliação, elevam o ParcerIA de
+Ideias que não estavam no escopo original e que, na minha avaliação, elevam o Parcerio de
 "app legal" para produto de nível mundial. Ordenadas por relação impacto/esforço.
 
 ### 🔥 1. Sinal de Fumaça — a funcionalidade que falta
@@ -1794,7 +1794,7 @@ não digitada pelo usuário.
 
 ### 9. Anti-vício explícito
 
-O ParcerIA deve ser o app que **comemora quando você o fecha**. Depois de registrar um
+O Parcerio deve ser o app que **comemora quando você o fecha**. Depois de registrar um
 encontro: *"Guarda o celular e aproveita. A gente conta o tempo."* Nenhum feed infinito,
 nenhuma tela projetada para prender.
 
@@ -1859,6 +1859,6 @@ no número, e o número é o produto.
 
 ---
 
-*Documento de primeira entrega — ParcerIA. Próximo passo: plano de implementação da
+*Documento de primeira entrega — Parcerio. Próximo passo: plano de implementação da
 Spec 1 (Fundação).*
 

@@ -29,6 +29,20 @@ service cloud.firestore {
       };
     }
 
+    function userDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data;
+    }
+
+    // Sem isto, qualquer um geraria um convite exibindo o nome e a foto de
+    // outra pessoa — o vetor de engenharia social mais óbvio deste produto.
+    function matchesOwnProfile(p) {
+      let u = userDoc(request.auth.uid);
+      return p.displayName == u.displayName
+          && p.photoURL == u.photoURL
+          && p.avatarEmoji == u.avatarEmoji
+          && p.handle == u.handle;
+    }
+
     // ---- users ---------------------------------------------------------
     // Perfil é legível por qualquer autenticado (o mapa precisa de nome e foto).
     // stats e handle pertencem ao servidor / à transação de reivindicação.
@@ -79,10 +93,38 @@ service cloud.firestore {
     }
 
     // ---- invites -------------------------------------------------------
+    // Não há campo `expiresAt`: o cliente não consegue prever request.time,
+    // então um vencimento gravado seria impossível de conferir — e convite
+    // eterno é o abuso óbvio. Vencimento = createdAt + 7d, derivado.
     match /invites/{code} {
-      allow read:   if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.fromUid == request.auth.uid;
-      allow update, delete: if false;
+      // `get` sim, `list` não: com o código se lê um convite; sem ele não se
+      // varre a coleção. São 32^8 ≈ 1,1 trilhão de códigos.
+      allow get:  if isSignedIn();
+      allow list: if false;
+
+      allow create: if isOwner(request.resource.data.fromUid)
+                    && request.resource.data.code == code
+                    && request.resource.data.usedBy == null
+                    && request.resource.data.status == 'pending'
+                    && request.resource.data.maxUses == 1
+                    && request.resource.data.createdAt == request.time
+                    && matchesOwnProfile(request.resource.data.fromProfile);
+
+      // Só a transição pendente → usado, e só por quem não é o dono.
+      // isSignedIn() aqui é defesa em profundidade, não a única barreira:
+      // para anônimo, request.auth é null e request.auth.uid abaixo já
+      // vira erro de avaliação, que nega sozinho. Não é código morto —
+      // é redundância deliberada, não remova sem entender isso.
+      allow update: if isSignedIn()
+                    && resource.data.usedBy == null
+                    && resource.data.status == 'pending'
+                    && request.auth.uid != resource.data.fromUid
+                    && request.resource.data.usedBy == request.auth.uid
+                    && request.resource.data.status == 'accepted'
+                    && request.resource.data.diff(resource.data)
+                         .affectedKeys().hasOnly(['usedBy', 'status']);
+
+      allow delete: if false;
     }
 
     // ---- padrão --------------------------------------------------------
