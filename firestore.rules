@@ -19,6 +19,59 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/partnerships/$(pid)).data;
     }
 
+    function superPartnership(spid) {
+      return get(/databases/$(database)/documents/superPartnerships/$(spid)).data;
+    }
+
+    // Precisa bater com GAME_CATALOG_SIZE em shared/dailyGame.ts.
+    function gameCatalogSize() {
+      return 120;
+    }
+
+    // Os 10800000 ms são as 3h de America/Sao_Paulo: movem a virada do dia
+    // do UTC para a meia-noite local. Verificado contra o emulador em 28/08 —
+    // a regra calcula o índice e nega o índice errado.
+    function todayNumber() {
+      return int((request.time.toMillis() - 10800000) / 86400000);
+    }
+
+    function pad2(n) {
+      return n < 10 ? '0' + string(n) : string(n);
+    }
+
+    // A data de hoje em America/Sao_Paulo, no formato do id do documento.
+    // É a TERCEIRA derivação da data — shared/dailyGame.ts já tem dayNumber e
+    // gameDateId. Duplicação deliberada: se as três divergirem, a suíte fica
+    // vermelha, que é o comportamento desejado.
+    function todayId() {
+      let t = request.time - duration.value(3, 'h');
+      return string(t.year()) + '-' + pad2(t.month()) + '-' + pad2(t.day());
+    }
+
+    function questionOfTheDay() {
+      return 'q' + string(todayNumber() % gameCatalogSize());
+    }
+
+    // XP da rodada, nunca do votante: 8 votos valem o mesmo que 3.
+    function gameXp(voterCount, memberCount) {
+      return voterCount >= memberCount ? 15 : 6;
+    }
+
+    // Fechada = todo mundo votou, OU o dia da rodada já passou. Não existe job
+    // que feche: o fechamento é derivado na leitura, como o decaimento da
+    // Temperatura. hasAll (contenção), não comparação de tamanho: contar
+    // tamanhos é proxy de "todo mundo votou" e só funciona enquanto os dois
+    // conjuntos não puderem divergir. Hoje não podem, porque a Spec 6 ainda
+    // não escreveu regra de saída de membro em superPartnerships — no dia em
+    // que escrever, um membro saindo no meio da rodada bateria o quórum por
+    // tamanho sem que todo mundo presente tivesse votado, abrindo o voto
+    // cedo sem erro nenhum.
+    function roundClosed(spid, date) {
+      let g = get(/databases/$(database)/documents/superPartnerships/$(spid)/games/$(date)).data;
+      return g.voterUids.hasAll(superPartnership(spid).members)
+          || todayNumber() > g.dayNumber;
+    }
+
     function zeroStats() {
       return {
         'partnershipCount': 0,
@@ -125,6 +178,95 @@ service cloud.firestore {
                          .affectedKeys().hasOnly(['usedBy', 'status']);
 
       allow delete: if false;
+    }
+
+    // ---- jogo diário ---------------------------------------------------
+
+    match /gameQuestions/{qid} {
+      // O catálogo é curado à mão pelo console. Nenhum cliente escreve aqui:
+      // quem escrevesse trocaria a pergunta do dia do app inteiro.
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /questionSuggestions/{sid} {
+      // Fila só de entrada: escreve e some da vista. Ninguém lê pelo app, nem
+      // quem escreveu — leitura transformaria isso num canal de mensagem sem
+      // moderação entre usuários.
+      allow create: if isOwner(request.resource.data.suggestedBy)
+                    && request.resource.data.text is string
+                    && request.resource.data.text.size() >= 10
+                    && request.resource.data.text.size() <= 140
+                    && request.resource.data.suggestedAt == request.time
+                    && request.resource.data.keys().hasOnly(['text', 'suggestedBy', 'suggestedAt']);
+      allow read, update, delete: if false;
+    }
+
+    // A Spec 6 é quem define leitura e escrita do documento da Super Parceria
+    // em si. Aqui só existe o que o jogo diário precisa.
+    match /superPartnerships/{spid}/games/{date} {
+      allow read: if isMember(superPartnership(spid));
+
+      allow create: if isMember(superPartnership(spid))
+                    && request.resource.data.date == date
+                    && request.resource.data.date == todayId()
+                    && request.resource.data.dayNumber == todayNumber()
+                    && request.resource.data.questionId == questionOfTheDay()
+                    && request.resource.data.voterUids == [request.auth.uid]
+                    && request.resource.data.xpAwarded ==
+                         gameXp(1, superPartnership(spid).members.size())
+                    && request.resource.data.keys().hasOnly(
+                         ['date', 'dayNumber', 'questionId', 'voterUids', 'xpAwarded']);
+
+      allow update: if isMember(superPartnership(spid))
+                    && resource.data.dayNumber == todayNumber()
+                    && !(request.auth.uid in resource.data.voterUids)
+                    && request.resource.data.voterUids ==
+                         resource.data.voterUids.concat([request.auth.uid])
+                    && request.resource.data.xpAwarded ==
+                         gameXp(request.resource.data.voterUids.size(),
+                                superPartnership(spid).members.size())
+                    && request.resource.data.diff(resource.data)
+                         .affectedKeys().hasOnly(['voterUids', 'xpAwarded']);
+
+      allow delete: if false;
+
+      match /votes/{voter} {
+        // O próprio voto é sempre legível — senão a pessoa não consegue reler
+        // o que votou. O dos outros, só depois que a rodada fecha. O ramo do
+        // dono não checa isMember de propósito: checar custaria um get() na
+        // leitura mais frequente da feature, e o documento só existe se a
+        // pessoa votou (create já exige isMember) — não há vazamento a
+        // fechar, só um get() a economizar.
+        allow get:  if isOwner(voter)
+                    || (isMember(superPartnership(spid)) && roundClosed(spid, date));
+
+        // list não tem exceção para o próprio voto: listar devolveria os
+        // outros junto. E isMember aqui não é opcional como no get: sem ele,
+        // qualquer logado listaria os votos de qualquer rodada fechada de
+        // qualquer grupo — e é o list que a apuração usa, não o get.
+        allow list: if isMember(superPartnership(spid)) && roundClosed(spid, date);
+
+        // O getAfter enxerga o estado pós-transação (provado na Spec 2), então
+        // a regra consegue exigir que o voto e a entrada em voterUids sejam
+        // escritos juntos. Sem isso daria para votar sem aparecer como votante.
+        //
+        // isMember aqui é defesa em profundidade, não a única barreira: hoje
+        // quem não é do grupo já não entraria em voterUids, então nunca bate
+        // o getAfter acima. Mas se a regra da rodada afrouxar essa checagem
+        // um dia, esta linha continua barrando o voto sozinha — mesmo padrão
+        // do isSignedIn() redundante em invites.update.
+        allow create: if isOwner(voter)
+                      && isMember(superPartnership(spid))
+                      && request.resource.data.votedFor in superPartnership(spid).members
+                      && request.resource.data.votedAt == request.time
+                      && request.resource.data.keys().hasOnly(['votedFor', 'votedAt'])
+                      && getAfter(
+                           /databases/$(database)/documents/superPartnerships/$(spid)/games/$(date)
+                         ).data.voterUids.hasAll([voter]);
+
+        allow update, delete: if false;
+      }
     }
 
     // ---- padrão --------------------------------------------------------

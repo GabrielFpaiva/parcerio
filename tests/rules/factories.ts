@@ -83,3 +83,51 @@ export async function seedInvite(
     await ctx.firestore().doc(`invites/${code}`).set({ ...data, createdAt: new Date() });
   });
 }
+
+export function validSuperPartnership(members: string[], overrides: Record<string, unknown> = {}) {
+  const sorted = [...members].sort();
+  return {
+    id: sorted.join('_'),
+    members: sorted,
+    memberProfiles: Object.fromEntries(
+      sorted.map((uid) => {
+        const p = validProfile(uid, uid.replace(/-/g, ''));
+        return [uid, { displayName: p.displayName, photoURL: p.photoURL, avatarEmoji: p.avatarEmoji }];
+      }),
+    ),
+    partnershipIds: [],
+    name: 'Os Fominhas',
+    emoji: '🔥',
+    bornAt: serverTimestamp(),
+    level: 1,
+    xparceria: 0,
+    bonusMultiplier: 1.5,
+    status: 'active',
+    stats: { groupEncounters: 0, lastGroupEncounterAt: null },
+    ...overrides,
+  };
+}
+
+export async function seedSuperPartnership(
+  env: RulesTestEnvironment,
+  spid: string,
+  members: string[],
+) {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await ctx
+      .firestore()
+      .doc(`superPartnerships/${spid}`)
+      .set({ ...validSuperPartnership(members), bornAt: new Date() });
+  });
+}
+
+export async function seedRound(
+  env: RulesTestEnvironment,
+  spid: string,
+  date: string,
+  data: Record<string, unknown>,
+) {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().doc(`superPartnerships/${spid}/games/${date}`).set(data);
+  });
+}
