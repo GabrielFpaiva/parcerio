@@ -27,6 +27,15 @@ export interface InviteCheckInput {
  * probabilidade em cada índice — sem viés e sem precisar de rejection
  * sampling. Isso deixa de valer se INVITE_ALPHABET mudar para um tamanho
  * que não seja potência de 2.
+ *
+ * A única brecha, verificada no código do expo-crypto 57.0.2: o
+ * `getRandomBytes` cai para Math.random quando `__DEV__` E (não existe
+ * `global.nativeCallSyncHook` OU `global.__REMOTEDEV__`) — isto é, apenas
+ * com debug remoto de JS ligado, rodando no Chrome em vez do aparelho.
+ * No Expo Go em uso normal a bridge nativa existe e o caminho nativo é
+ * usado, o que importa porque o V0 distribui justamente por Expo Go.
+ * Códigos gerados com o debugger remoto plugado são de desenvolvimento e
+ * não devem ser tratados como válidos para ninguém de fora.
  */
 function secureRandom(): number {
   const byte = Crypto.getRandomBytes(1)[0];
