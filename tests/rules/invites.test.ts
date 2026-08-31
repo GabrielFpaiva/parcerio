@@ -48,7 +48,7 @@ describe('invites — create', () => {
   it('NEGA forjar o photoURL no fromProfile', async () => {
     const alice = env.authenticatedContext(ALICE).firestore();
     const forged = validInvite(ALICE);
-    forged.fromProfile.photoURL = 'https://evil.example/bob.jpg';
+    (forged.fromProfile as Record<string, unknown>).photoURL = 'https://evil.example/bob.jpg';
     await assertFails(alice.doc('invites/AB3D4F7H').set(forged));
   });
 
