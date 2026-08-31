@@ -80,7 +80,11 @@ export async function seedInvite(
   data: Record<string, unknown>,
 ) {
   await env.withSecurityRulesDisabled(async (ctx) => {
-    await ctx.firestore().doc(`invites/${code}`).set({ ...data, createdAt: new Date() });
+    // `createdAt` só cai para `new Date()` (agora) quando `data` não trouxer
+    // um valor — sem este `??` não dava para semear um convite velho para
+    // testar o TTL (Hole 3): a chamada sempre sobrescrevia createdAt com o
+    // instante atual, não importa o que viesse em `data`.
+    await ctx.firestore().doc(`invites/${code}`).set({ createdAt: new Date(), ...data });
   });
 }
 

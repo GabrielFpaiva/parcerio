@@ -2,12 +2,18 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
+import { doc, setDoc } from 'firebase/firestore';
 import { readFileSync } from 'node:fs';
 import { MS_PER_DAY, SP_UTC_OFFSET_MS } from '../../shared/dailyGame';
 
 export const ALICE = 'alice-uid';
 export const BOB = 'bob-uid';
 export const CAROL = 'carol-uid';
+
+// Mesmo problema de tipos descrito em profile-transaction.test.ts: `.firestore()`
+// devolve o tipo compat, não o `Firestore` modular — derivar por `ReturnType`
+// evita a colisão de identidades entre os dois módulos @firebase duplicados.
+type AnyFirestore = ReturnType<ReturnType<RulesTestEnvironment['authenticatedContext']>['firestore']>;
 
 export async function createTestEnv(): Promise<RulesTestEnvironment> {
   return initializeTestEnvironment({
@@ -53,6 +59,16 @@ export async function evitarViradaDeDia(
   if (ateVirada < MARGEM_DA_VIRADA_MS) {
     await sleep(ateVirada + FOLGA_APOS_VIRADA_MS);
   }
+}
+
+/**
+ * Reivindica um handle fora da transação real de createProfile() — para
+ * fixtures de teste que precisam do registro em `handles` existir antes de
+ * escrever `users/{uid}` diretamente (fora de uma transação), porque a regra
+ * de `users` create/update agora exige handle registrado ao próprio uid.
+ */
+export async function claimHandle(db: AnyFirestore, uid: string, handle: string): Promise<void> {
+  await setDoc(doc(db, 'handles', handle), { uid });
 }
 
 export function validProfile(uid: string, handle: string) {

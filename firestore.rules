@@ -97,29 +97,72 @@ service cloud.firestore {
     }
 
     // ---- users ---------------------------------------------------------
-    // Perfil é legível por qualquer autenticado (o mapa precisa de nome e foto).
+    // Perfil é legível por qualquer autenticado (o mapa precisa de nome e
+    // foto) — mas só get: list despejaria a coleção inteira (uid, handle,
+    // displayName, photoURL, avatarEmoji, timezone, settings, stats) pra
+    // qualquer autenticado de graça (Hole 4, revisão adversarial 2026-08-27).
     // stats e handle pertencem ao servidor / à transação de reivindicação.
     match /users/{uid} {
-      allow read: if isSignedIn();
+      allow get:  if isSignedIn();
+      allow list: if false;
 
+      // getAfter, não get: createProfile() (src/features/profile/services/
+      // profile.ts) reivindica o handle em `handles/{handle}` e cria o
+      // perfil na MESMA transação (provado em profile-transaction.test.ts,
+      // que faz os dois tx.set juntos). get() enxerga o estado ANTES da
+      // escrita da própria requisição — handles/{handle} ainda não existiria
+      // — e negaria a criação legítima. getAfter() enxerga o estado depois
+      // de toda a escrita da requisição, então vê os dois writes juntos.
+      // Testado no emulador: com get() a primeira reivindicação de handle
+      // (profile-transaction.test.ts) passa a falhar; com getAfter() ela
+      // continua passando e a impersonação abaixo continua barrada.
+      //
+      // Sem este check (Hole 1, revisão adversarial 2026-08-27),
+      // matchesOwnProfile() só comparava o convite contra users/{auth.uid}
+      // — um documento que o próprio atacante escreve — sem nunca consultar
+      // o registro que deveria tornar o handle único. O atacante escrevia
+      // handle/displayName/photoURL/avatarEmoji da vítima no próprio
+      // users/{uid} e matchesOwnProfile() passava.
+      //
+      // hasOnly com o shape de UserDoc (shared/types.ts): sem isto (Hole 5)
+      // qualquer campo extra vira blob world-readable via `get`, igual ao
+      // risco que já fecha em invites e questionSuggestions.
       allow create: if isOwner(uid)
                     && request.resource.data.uid == uid
                     && request.resource.data.handle is string
-                    && request.resource.data.stats == zeroStats();
+                    && request.resource.data.stats == zeroStats()
+                    && getAfter(/databases/$(database)/documents/handles/$(request.resource.data.handle)).data.uid == request.auth.uid
+                    && request.resource.data.keys().hasOnly(
+                         ['uid', 'displayName', 'handle', 'photoURL', 'avatarEmoji', 'timezone',
+                          'createdAt', 'lastActiveAt', 'stats', 'settings']);
 
       allow update: if isOwner(uid)
                     && request.resource.data.uid == resource.data.uid
                     && request.resource.data.handle == resource.data.handle
-                    && request.resource.data.stats == resource.data.stats;
+                    && request.resource.data.stats == resource.data.stats
+                    && getAfter(/databases/$(database)/documents/handles/$(request.resource.data.handle)).data.uid == request.auth.uid
+                    && request.resource.data.keys().hasOnly(
+                         ['uid', 'displayName', 'handle', 'photoURL', 'avatarEmoji', 'timezone',
+                          'createdAt', 'lastActiveAt', 'stats', 'settings']);
 
       allow delete: if false;
     }
 
     // ---- handles -------------------------------------------------------
     // Unicidade por criação: o Firestore recusa create em doc existente.
+    // list nunca: enumerar a coleção dá o mapa handle→uid inteiro de graça
+    // (Hole 4). Formato espelhado de handle ao vivo — mas users.handle é
+    // imutável (:112) e handles não tem update/delete (:abaixo), então sem
+    // este check nada aqui era corrigível depois: handle vazio, com 500
+    // caracteres ou maiúsculo (confirmados pela revisão, Hole 2) ficavam
+    // presos para sempre.
     match /handles/{handle} {
-      allow read:   if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow get:    if isSignedIn();
+      allow list:   if false;
+      allow create: if isSignedIn()
+                    && request.resource.data.uid == request.auth.uid
+                    && handle.matches('^[a-z0-9_.]{3,20}$')
+                    && request.resource.data.keys().hasOnly(['uid']);
       allow update, delete: if false;
     }
 
@@ -139,7 +182,13 @@ service cloud.firestore {
     // Sem parceria aceita, a localização não existe para você.
     match /presence/{uid} {
       allow read:   if isSignedIn() && request.auth.uid in resource.data.visibleTo;
-      allow create: if isOwner(uid) && request.resource.data.visibleTo.size() == 0;
+      // hasOnly no shape de docs/2026-08-03-parceria-design.md §presence/{uid}:
+      // sem isto (Hole 5) qualquer campo extra virava blob lido de volta por
+      // quem estiver em visibleTo — mesmo risco que já fecha em users.
+      allow create: if isOwner(uid)
+                    && request.resource.data.visibleTo.size() == 0
+                    && request.resource.data.keys().hasOnly(
+                         ['uid', 'location', 'accuracy', 'updatedAt', 'isStale', 'batteryLevel', 'visibleTo']);
       allow update: if isOwner(uid)
                     && request.resource.data.visibleTo == resource.data.visibleTo;
       allow delete: if isOwner(uid);
@@ -177,10 +226,16 @@ service cloud.firestore {
       // para anônimo, request.auth é null e request.auth.uid abaixo já
       // vira erro de avaliação, que nega sozinho. Não é código morto —
       // é redundância deliberada, não remova sem entender isso.
+      // Vencimento = createdAt + INVITE_TTL_DAYS (shared/invite.ts, hoje 7
+      // dias), verificado aqui de verdade, não só no comentário: sem isto
+      // (Hole 3, revisão adversarial 2026-08-27), a regra nunca lia
+      // createdAt e um convite de 100 dias ainda era aceito. Confirmado no
+      // emulador que Timestamp + duration.value(n, 'd') funciona em regra.
       allow update: if isSignedIn()
                     && resource.data.usedBy == null
                     && resource.data.status == 'pending'
                     && request.auth.uid != resource.data.fromUid
+                    && request.time < resource.data.createdAt + duration.value(7, 'd')
                     && request.resource.data.usedBy == request.auth.uid
                     && request.resource.data.status == 'accepted'
                     && request.resource.data.diff(resource.data)
