@@ -1,5 +1,5 @@
 import { assertFails, assertSucceeds, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { deleteDoc, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { ALICE, BOB, CAROL, createTestEnv } from './helpers';
 
 let env: RulesTestEnvironment;
@@ -129,5 +129,56 @@ describe('presence — visibleTo é a única porta', () => {
     });
     const db = env.unauthenticatedContext().firestore();
     await assertFails(getDoc(doc(db, 'presence', ALICE)));
+  });
+
+  // :142 — visibleTo.size() == 0 no create — nunca tinha teste que criasse
+  // um visibleTo não-vazio COMO O DONO. Sem esta guarda, o próprio dono
+  // concede visibilidade da localização pra quem quiser, sem parceria
+  // nenhuma, e dá pra alcançar isso por delete-então-create (delete é
+  // permitido ao dono, então a rota fica aberta mesmo sem ninguém nunca
+  // conseguir dar update em visibleTo diretamente). É o teste mais
+  // importante desta seção: sem ele, `visibleTo.size() == 0` é uma linha
+  // que qualquer um remove sem a suíte notar.
+  it('NEGA o dono criar a própria presença já com visibleTo não-vazio', async () => {
+    const db = env.authenticatedContext(ALICE).firestore();
+    await assertFails(setDoc(doc(db, 'presence', ALICE), { uid: ALICE, visibleTo: [BOB] }));
+  });
+
+  // :145 — presence delete não tinha nenhum teste, nem positivo nem negativo.
+  it('NEGA quem não é dono apagar presença alheia', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'presence', ALICE), { uid: ALICE, visibleTo: [] });
+    });
+    const db = env.authenticatedContext(BOB).firestore();
+    await assertFails(deleteDoc(doc(db, 'presence', ALICE)));
+  });
+
+  it('PERMITE o dono apagar a própria presença', async () => {
+    const db = env.authenticatedContext(ALICE).firestore();
+    await setDoc(doc(db, 'presence', ALICE), { uid: ALICE, visibleTo: [] });
+    await assertSucceeds(deleteDoc(doc(db, 'presence', ALICE)));
+  });
+
+  // Hole 5 (revisão adversarial 2026-08-27): presence create não tinha
+  // keys().hasOnly — mesma classe de vazamento que a revisão achou em users
+  // (campo arbitrário de 200 KB lido de volta por quem estiver em
+  // visibleTo). Shape real em docs/2026-08-03-parceria-design.md §"presence".
+  it('NEGA campo além do shape de presence no create', async () => {
+    const db = env.authenticatedContext(ALICE).firestore();
+    await assertFails(
+      setDoc(doc(db, 'presence', ALICE), { uid: ALICE, visibleTo: [], campoExtra: 'x' }),
+    );
+  });
+});
+
+describe('partnerships — delete (sem teste até aqui)', () => {
+  it('NEGA membro apagar a própria parceria', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'partnerships', `${ALICE}_${BOB}`), {
+        members: [ALICE, BOB], status: 'active', xparceria: 100, level: 1,
+      });
+    });
+    const db = env.authenticatedContext(ALICE).firestore();
+    await assertFails(deleteDoc(doc(db, 'partnerships', `${ALICE}_${BOB}`)));
   });
 });

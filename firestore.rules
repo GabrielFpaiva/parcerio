@@ -182,7 +182,13 @@ service cloud.firestore {
     // Sem parceria aceita, a localização não existe para você.
     match /presence/{uid} {
       allow read:   if isSignedIn() && request.auth.uid in resource.data.visibleTo;
-      allow create: if isOwner(uid) && request.resource.data.visibleTo.size() == 0;
+      // hasOnly no shape de docs/2026-08-03-parceria-design.md §presence/{uid}:
+      // sem isto (Hole 5) qualquer campo extra virava blob lido de volta por
+      // quem estiver em visibleTo — mesmo risco que já fecha em users.
+      allow create: if isOwner(uid)
+                    && request.resource.data.visibleTo.size() == 0
+                    && request.resource.data.keys().hasOnly(
+                         ['uid', 'location', 'accuracy', 'updatedAt', 'isStale', 'batteryLevel', 'visibleTo']);
       allow update: if isOwner(uid)
                     && request.resource.data.visibleTo == resource.data.visibleTo;
       allow delete: if isOwner(uid);
