@@ -220,10 +220,16 @@ service cloud.firestore {
       // para anônimo, request.auth é null e request.auth.uid abaixo já
       // vira erro de avaliação, que nega sozinho. Não é código morto —
       // é redundância deliberada, não remova sem entender isso.
+      // Vencimento = createdAt + INVITE_TTL_DAYS (shared/invite.ts, hoje 7
+      // dias), verificado aqui de verdade, não só no comentário: sem isto
+      // (Hole 3, revisão adversarial 2026-08-27), a regra nunca lia
+      // createdAt e um convite de 100 dias ainda era aceito. Confirmado no
+      // emulador que Timestamp + duration.value(n, 'd') funciona em regra.
       allow update: if isSignedIn()
                     && resource.data.usedBy == null
                     && resource.data.status == 'pending'
                     && request.auth.uid != resource.data.fromUid
+                    && request.time < resource.data.createdAt + duration.value(7, 'd')
                     && request.resource.data.usedBy == request.auth.uid
                     && request.resource.data.status == 'accepted'
                     && request.resource.data.diff(resource.data)

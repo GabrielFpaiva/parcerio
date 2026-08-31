@@ -43,6 +43,22 @@ describe('invites — create', () => {
     await assertFails(alice.doc('invites/AB3D4F7H').set(forged));
   });
 
+  // :94 e :95 de matchesOwnProfile nunca tinham teste isolando photoURL nem
+  // avatarEmoji — só displayName e handle eram forjados até aqui.
+  it('NEGA forjar o photoURL no fromProfile', async () => {
+    const alice = env.authenticatedContext(ALICE).firestore();
+    const forged = validInvite(ALICE);
+    forged.fromProfile.photoURL = 'https://evil.example/bob.jpg';
+    await assertFails(alice.doc('invites/AB3D4F7H').set(forged));
+  });
+
+  it('NEGA forjar o avatarEmoji no fromProfile', async () => {
+    const alice = env.authenticatedContext(ALICE).firestore();
+    const forged = validInvite(ALICE);
+    forged.fromProfile.avatarEmoji = '🐸';
+    await assertFails(alice.doc('invites/AB3D4F7H').set(forged));
+  });
+
   it('NEGA createdAt escolhido pelo cliente', async () => {
     // Sem isso, dava para criar um convite com data futura e nunca expirar.
     const alice = env.authenticatedContext(ALICE).firestore();
@@ -168,6 +184,24 @@ describe('invites — update', () => {
     await assertFails(
       bob.doc('invites/AB3D4F7H').update({ usedBy: BOB, status: 'accepted', fromUid: BOB }),
     );
+  });
+
+  // Hole 3 (revisão adversarial 2026-08-27): shared/types.ts e o comentário
+  // em firestore.rules diziam que o vencimento era "derivado" — mas nenhuma
+  // regra lia createdAt. A revisão confirmou que um convite de 100 dias
+  // ainda era aceito. INVITE_TTL_DAYS (shared/invite.ts) é 7.
+  it('NEGA aceitar convite vencido (createdAt com mais de 7 dias)', async () => {
+    const vencido = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+    await seedInvite(env, 'OLD00001', validInvite(ALICE, { createdAt: vencido }));
+    const bob = env.authenticatedContext(BOB).firestore();
+    await assertFails(bob.doc('invites/OLD00001').update({ usedBy: BOB, status: 'accepted' }));
+  });
+
+  it('PERMITE aceitar convite dentro do prazo (createdAt há 6 dias)', async () => {
+    const dentroDoPrazo = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000);
+    await seedInvite(env, 'NEW00001', validInvite(ALICE, { createdAt: dentroDoPrazo }));
+    const bob = env.authenticatedContext(BOB).firestore();
+    await assertSucceeds(bob.doc('invites/NEW00001').update({ usedBy: BOB, status: 'accepted' }));
   });
 
   it('NEGA delete', async () => {
