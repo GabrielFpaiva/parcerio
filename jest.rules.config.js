@@ -10,4 +10,10 @@ module.exports = {
   // do Jest), um arquivo limpa o banco enquanto outro está no meio de um
   // teste — falhas intermitentes e sem relação com as regras. Serializa.
   maxWorkers: 1,
+  // Serviços importam via alias do tsconfig (@shared) e shared/invite.ts usa
+  // expo-crypto, que não carrega em Node: troca por um shim de node:crypto.
+  moduleNameMapper: {
+    '^@shared/(.*)$': '<rootDir>/shared/$1',
+    '^expo-crypto$': '<rootDir>/tests/rules/expo-crypto-node.ts',
+  },
 };
