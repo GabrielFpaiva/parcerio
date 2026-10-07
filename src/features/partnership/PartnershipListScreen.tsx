@@ -37,7 +37,7 @@ export function PartnershipListScreen() {
           Uma parceria começa quando duas pessoas decidem se encontrar mais. Chama alguém.
         </Text>
         <View style={styles.actions}>
-          <Button label="Convidar um parceiro" onPress={() => router.push('/onboarding/first-invite' as never)} />
+          <Button label="Convidar um parceiro" onPress={() => router.push('/onboarding/first-invite')} />
           <Button label="Tenho um convite" variant="ghost" onPress={() => router.push('/invite/enter' as never)} />
         </View>
       </View>

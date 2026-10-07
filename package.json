@@ -53,6 +53,7 @@
   "private": true,
   "jest": {
     "preset": "jest-expo",
+    "resolver": "react-native-worklets/jest/resolver",
     "testPathIgnorePatterns": [
       "/node_modules/",
       "<rootDir>/tests/"
