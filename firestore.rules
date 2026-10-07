@@ -123,8 +123,8 @@ service cloud.firestore {
     // Convite ↔ parceria, nos DOIS sentidos (lição do furo rodada/voto):
     // inviteConsumedBy é o lado da parceria — ela só nasce se o mesmo commit
     // marcar o convite como usado por quem aceita. Sem isto, um convite de
-    // uso único gerava uma parceria por pessoa que tivesse o código (provado
-    // no emulador, Task 3). O outro sentido está em invites.update.
+    // uso único gerava uma parceria por pessoa que tivesse o código. O outro
+    // sentido está em invites.update.
     function inviteConsumedBy(code, accepterUid) {
       let inv = getAfter(/databases/$(database)/documents/invites/$(code)).data;
       return inv.usedBy == accepterUid
@@ -386,7 +386,7 @@ service cloud.firestore {
     match /partnerships/{pid} {
       allow read: if isMember(resource.data);
 
-      // O aceite (Task 7) lê partnerships/{pid} para decidir entre nascimento
+      // O aceite (acceptInvite) lê partnerships/{pid} para decidir entre nascimento
       // e reativação. Sem documento, isMember(resource.data) dá erro e nega.
       // Só `get`, só doc inexistente, só para quem compõe o pid: não revela
       // nada além de "ainda não existe" a uma das duas pessoas do par. O split
@@ -399,9 +399,9 @@ service cloud.firestore {
 
       // Todo valor é literal. Sem servidor, esta regra É o servidor: é o que
       // impede um número inventado de entrar no produto cuja moeda é o número.
-      // updatedAt e o hasOnly vão além do brief da Task 3: a spec (§3.2) põe
-      // updatedAt entre os literais, e um campo fora do shape de
-      // PartnershipDoc (shared/types.ts) seria um valor que o cliente escolheu.
+      // updatedAt é literal porque a spec (§3.2) o põe entre os valores do
+      // nascimento; o hasOnly porque um campo fora do shape de PartnershipDoc
+      // (shared/types.ts) seria um valor que o cliente escolheu.
       allow create: if isSignedIn()
                     && pidMatches(pid, request.resource.data.members)
                     && request.resource.data.id == pid
@@ -441,6 +441,11 @@ service cloud.firestore {
       // Quando duas regras casam com o mesmo caminho, o acesso é concedido se
       // QUALQUER uma permitir. Este bloco convive com o /{document=**} abaixo,
       // que continua negando escrita em days, missions e insights.
+      //
+      // isMemberAfter é defesa em profundidade: o evento só passa junto de
+      // uma escrita na parceria que ele narra, e essa escrita já exige
+      // isMember (ou, no nascimento, auth.uid em members). Nenhum teste a
+      // isola sozinha; "só membro reativa" prova o par isMember + isMemberAfter.
       match /events/{eventId} {
         allow read:   if isMember(partnership(pid));
         allow create: if isMemberAfter(pid)
@@ -519,7 +524,7 @@ service cloud.firestore {
       // é inviteConsumedBy): sem ele qualquer logado com o código queimava o
       // convite sem parceria nenhuma nascer. Ele pede que, depois do commit, a
       // parceria do par aponte para ESTE código — não que ela esteja sendo
-      // criada agora. Assim o mesmo ramo serve à reativação (Task 4), em que a
+      // criada agora. Assim o mesmo ramo serve à reativação, em que a
       // parceria `ended` já existe e passa a apontar para o código novo.
       allow update: if isSignedIn()
                     && inviteIsOpen(resource.data)

@@ -59,7 +59,10 @@ describe('nascimento — consentimento', () => {
   });
 
   it('NEGA usar convite de terceiro para virar parceiro de quem não convidou', async () => {
-    // Convite da Carol, mas Bob tenta virar parceiro da Alice com ele.
+    // Convite da Carol, mas Bob tenta virar parceiro da Alice com ele. Nega
+    // por mais de um motivo: o batch consome o CODE da Alice, que não é o
+    // bornFromInvite. A guarda `inv.fromUid == inviterUid` sozinha é provada
+    // em "convite de terceiro no mesmo commit", abaixo.
     await seedInvite(env, 'CAROLCOD', validInvite(CAROL));
     await assertFails(bobAccepts({ bornFromInvite: 'CAROLCOD' }));
   });
@@ -97,16 +100,17 @@ describe('nascimento — consentimento', () => {
   });
 
   it('NEGA que o dono do convite crie a parceria sozinho', async () => {
+    // Quem nega primeiro é o lado do convite (`auth.uid != fromUid` em
+    // invites.update), não `inv.fromUid == inviterUid`.
     const data = validPartnership(ALICE, BOB, CODE, { createdBy: BOB });
     await assertFails(acceptAs(ALICE, `partnerships/${PID}`, data, CODE));
   });
 
   it('NEGA que o dono do convite se declare createdBy e aceite o próprio convite', async () => {
-    // O teste acima usa createdBy: BOB e cai em `inv.fromUid == inviterUid`.
-    // Aqui o convite bate com createdBy, e só sobram as duas guardas
-    // redundantes: `createdBy != auth.uid` (create) e `inv.fromUid !=
-    // accepterUid` (inviteAuthorizes). Cada uma sozinha basta — este teste só
-    // fica vermelho se as duas caírem juntas.
+    // Aqui o convite bate com createdBy, e do lado da parceria só sobram as
+    // duas guardas redundantes: `createdBy != auth.uid` (create) e
+    // `inv.fromUid != accepterUid` (inviteAuthorizes). Cada uma sozinha
+    // basta — e o lado do convite também nega (`auth.uid != fromUid`).
     await assertFails(acceptAs(ALICE, `partnerships/${PID}`, validPartnership(ALICE, BOB, CODE), CODE));
   });
 
@@ -176,6 +180,45 @@ describe('nascimento — convite e parceria amarrados nos dois sentidos', () => 
     const carolPid = [ALICE, CAROL].sort().join('_');
     await assertFails(
       acceptAs(CAROL, `partnerships/${carolPid}`, validPartnership(ALICE, CAROL, CODE), CODE),
+    );
+  });
+});
+
+describe('nascimento — convite de terceiro no mesmo commit', () => {
+  // O ataque que só `inv.fromUid == inviterUid` (inviteAuthorizes) segura:
+  // Bob aceita, de verdade, o convite da Carol (nasce CAROL_BOB) e, no mesmo
+  // commit, cria ALICE_BOB apontando para o mesmo código. O lado do convite
+  // fica satisfeito com CAROL_BOB e o convite é consumido por Bob — sem a
+  // guarda, nasce uma parceria com a Alice sem ela ter convidado ninguém.
+  const CAROL_CODE = 'CAROLCOD';
+  const CB = [CAROL, BOB].sort().join('_');
+
+  beforeEach(() => seedInvite(env, CAROL_CODE, validInvite(CAROL, { code: CAROL_CODE })));
+
+  type Db = ReturnType<ReturnType<RulesTestEnvironment['authenticatedContext']>['firestore']>;
+  type Batch = ReturnType<Db['batch']>;
+
+  /** O aceite legítimo; `extra` acrescenta a parte do ataque no mesmo batch. */
+  function bobAcceptsCarol(extra?: (db: Db, batch: Batch) => void) {
+    const db = env.authenticatedContext(BOB).firestore();
+    const batch = db.batch();
+    batch.set(db.doc(`partnerships/${CB}`), validPartnership(CAROL, BOB, CAROL_CODE));
+    batch.set(db.doc(`partnerships/${CB}/events/born`), bornEvent());
+    batch.update(db.doc(`invites/${CAROL_CODE}`), { usedBy: BOB, status: 'accepted' });
+    extra?.(db, batch);
+    return batch.commit();
+  }
+
+  it('PERMITE o aceite legítimo do convite da Carol (controle)', async () => {
+    await assertSucceeds(bobAcceptsCarol());
+  });
+
+  it('NEGA nascer ALICE_BOB com o convite da Carol junto do aceite legítimo', async () => {
+    await assertFails(
+      bobAcceptsCarol((db, batch) => {
+        batch.set(db.doc(`partnerships/${PID}`), validPartnership(ALICE, BOB, CAROL_CODE));
+        batch.set(db.doc(`partnerships/${PID}/events/born`), bornEvent());
+      }),
     );
   });
 });

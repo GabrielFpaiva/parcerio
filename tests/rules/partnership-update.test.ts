@@ -141,9 +141,22 @@ describe('reativação de parceria encerrada', () => {
     );
   });
 
-  it('NEGA reativar sem convite válido', async () => {
-    // Consome o convite real: atualizar um convite inexistente daria NOT_FOUND.
-    await assertFails(reactivateAs(BOB, { bornFromInvite: 'NAOEXISTE' }));
+  // Convite inválido, um motivo por teste. Cada guarda que confere o convite
+  // tem o seu teste isolado:
+  //  - inviteAuthorizes, convite inexistente: este aqui;
+  //  - inviteAuthorizes, inviteIsOpen: "convite que ele já consumiu";
+  //  - inviteAuthorizes, `inv.fromUid == inviterUid`: "convite de terceiro no
+  //    mesmo commit" (describe abaixo);
+  //  - inviteConsumedBy: "sem consumir o convite no mesmo commit";
+  //  - lado do convite (invites.update): "consumir o convite novo sem reativar".
+  it('NEGA reativar apontando para convite inexistente', async () => {
+    // Nenhum convite é escrito (atualizar um inexistente daria NOT_FOUND, e
+    // consumir outro faria o lado do convite negar também). Quem nega são as
+    // duas leituras do lado da parceria sobre o mesmo doc ausente —
+    // inviteAuthorizes e inviteConsumedBy —, um motivo só: o convite não existe.
+    await assertFails(
+      reactivateAs(BOB, { bornFromInvite: 'NAOEXISTE' }, { consume: null }),
+    );
   });
 
   it('NEGA reativar com o próprio convite', async () => {
@@ -153,16 +166,13 @@ describe('reativação de parceria encerrada', () => {
 
   it('NEGA reativar com convite de terceiro', async () => {
     // Convite aberto da Carol: Bob o consome para ressuscitar a parceria com
-    // a Alice, que não convidou ninguém.
+    // a Alice, que não convidou ninguém. Aqui o lado do convite também nega
+    // (CAROL_BOB não aponta para CAROLCOD); a guarda `inv.fromUid ==
+    // inviterUid` sozinha é provada em "convite de terceiro no mesmo commit".
     await seedInvite(env, 'CAROLCOD', validInvite(CAROL, { code: 'CAROLCOD' }));
     await assertFails(reactivateAs(BOB, { bornFromInvite: 'CAROLCOD' }, { consume: 'CAROLCOD' }));
   });
 
-  it('NEGA que não-membro reative com o convite de um dos membros', async () => {
-    // otherMember() devolve a Alice para a Carol também: sem isMember, a
-    // Carol ressuscitaria a parceria dos dois com o convite da Alice.
-    await assertFails(reactivateAs(CAROL));
-  });
 
   it('NEGA Bob reativar sozinho com o convite que ele já consumiu', async () => {
     // O convite do nascimento já está accepted/usedBy Bob: inviteConsumedBy
@@ -251,6 +261,82 @@ describe('reativação de parceria encerrada', () => {
       type: 'partnership_paused', occurredAt: new Date(), xpAwarded: 0,
     });
     await assertFails(reactivateAs(BOB, {}, { eventId: null }));
+  });
+});
+
+describe('reativação — ataques combinados com um nascimento legítimo', () => {
+  // Nos dois ataques abaixo, o convite é aceito de verdade (nasce a parceria
+  // de quem o usa), e o lado do convite fica satisfeito com ela. Só as
+  // guardas da parceria reativada no mesmo commit impedem o abuso.
+  const CB = [CAROL, BOB].sort().join('_');
+  const AC = [ALICE, CAROL].sort().join('_');
+  const bornEvent = () => ({ type: 'partnership_born', occurredAt: serverTimestamp(), xpAwarded: 100 });
+  const resumedEvent = () => ({ type: 'partnership_resumed', occurredAt: serverTimestamp(), xpAwarded: 0 });
+  const reativaAB = (code: string) => ({
+    status: 'active',
+    temperature: 50,
+    temperatureBand: 'mild',
+    memberProfiles: validPartnership(ALICE, BOB, CODE).memberProfiles,
+    bornFromInvite: code,
+    updatedAt: serverTimestamp(),
+  });
+
+  type Leg = 'reactivate' | 'event';
+
+  /**
+   * `uid` aceita o convite `code` de `inviter` (nasce a parceria dos dois) e,
+   * se pedido, no mesmo commit reativa ALICE_BOB com o mesmo código e grava
+   * events/{code} nela.
+   */
+  function acceptAndHijack(uid: string, inviter: string, code: string, legs: Leg[]) {
+    const pid = [inviter, uid].sort().join('_');
+    const db = env.authenticatedContext(uid).firestore();
+    const batch = db.batch();
+    batch.set(db.doc(`partnerships/${pid}`), validPartnership(inviter, uid, code));
+    batch.set(db.doc(`partnerships/${pid}/events/born`), bornEvent());
+    batch.update(db.doc(`invites/${code}`), { usedBy: uid, status: 'accepted' });
+    if (legs.includes('reactivate')) batch.update(db.doc(`partnerships/${PID}`), reativaAB(code));
+    if (legs.includes('event')) batch.set(db.doc(`partnerships/${PID}/events/${code}`), resumedEvent());
+    return batch.commit();
+  }
+
+  beforeEach(async () => {
+    await seedWithStatus('ended');
+    await seedInvite(env, 'CAROLCOD', validInvite(CAROL, { code: 'CAROLCOD' }));
+    await seedInvite(env, 'ALICECOD', validInvite(ALICE, { code: 'ALICECOD' }));
+  });
+
+  describe('convite de terceiro no mesmo commit (`inv.fromUid == inviterUid`)', () => {
+    it('PERMITE Bob aceitar o convite da Carol (controle)', async () => {
+      await assertSucceeds(acceptAndHijack(BOB, CAROL, 'CAROLCOD', []));
+    });
+
+    it('NEGA Bob reativar ALICE_BOB com o convite da Carol junto do aceite', async () => {
+      await assertFails(acceptAndHijack(BOB, CAROL, 'CAROLCOD', ['reactivate', 'event']));
+    });
+  });
+
+  describe('só membro reativa (isMember / isMemberAfter)', () => {
+    it('PERMITE Carol aceitar o convite da Alice (controle)', async () => {
+      await assertSucceeds(acceptAndHijack(CAROL, ALICE, 'ALICECOD', []));
+    });
+
+    it('NEGA Carol reativar ALICE_BOB, com evento, junto do aceite', async () => {
+      // otherMember() devolve a Alice para a Carol também. Sem isMember na
+      // reativação E isMemberAfter no evento, a Carol ressuscitava a parceria
+      // dos dois sem o Bob consentir. Cada guarda sozinha basta aqui.
+      await assertFails(acceptAndHijack(CAROL, ALICE, 'ALICECOD', ['reactivate', 'event']));
+    });
+
+    it('NEGA Carol reativar ALICE_BOB sem escrever evento, com o resumed pré-plantado', async () => {
+      // O resumed já está em events/ALICECOD (um membro pode plantá-lo numa
+      // retomada paused → active), então eventAfterIs passa sem a Carol
+      // escrever evento — e isMemberAfter nem é chamado. Só isMember nega.
+      await seedPartnership(env, `${PID}/events/ALICECOD`, {
+        type: 'partnership_resumed', occurredAt: new Date(), xpAwarded: 0,
+      });
+      await assertFails(acceptAndHijack(CAROL, ALICE, 'ALICECOD', ['reactivate']));
+    });
   });
 });
 
