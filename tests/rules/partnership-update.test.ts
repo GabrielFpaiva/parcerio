@@ -164,6 +164,14 @@ describe('reativação de parceria encerrada', () => {
     await assertFails(reactivateAs(CAROL));
   });
 
+  it('NEGA Bob reativar sozinho com o convite que ele já consumiu', async () => {
+    // O convite do nascimento já está accepted/usedBy Bob: inviteConsumedBy
+    // vale sem escrita nenhuma no convite, e o lado do convite nem é chamado.
+    // Só inviteIsOpen (via inviteAuthorizes) nega o reuso.
+    await seedInvite(env, CODE, validInvite(ALICE, { usedBy: BOB, status: 'accepted' }));
+    await assertFails(reactivateAs(BOB, { bornFromInvite: CODE }, { consume: null }));
+  });
+
   it('NEGA reativar sem consumir o convite no mesmo commit', async () => {
     // Sem inviteConsumedBy, o uso único do convite voltava pelo update.
     await assertFails(reactivateAs(BOB, {}, { consume: null }));
@@ -329,6 +337,38 @@ describe('propagação do próprio perfil', () => {
     // Diff vazio em memberProfiles: hasOnly([auth.uid]) aceitaria.
     const bob = env.authenticatedContext(BOB).firestore();
     await assertFails(bob.doc(`partnerships/${PID}`).update({ updatedAt: serverTimestamp() }));
+  });
+
+  // O parceiro renderiza esta entrada: tipo errado vira crash na tela dele.
+  // Tipos de MemberProfile em shared/types.ts.
+  it.each<[string, Record<string, unknown>]>([
+    ['entrada vazia', {}],
+    ['sem displayName', { photoURL: null, avatarEmoji: '🐢' }],
+    ['sem photoURL', { displayName: 'Bob Novo', avatarEmoji: '🐢' }],
+    ['sem avatarEmoji', { displayName: 'Bob Novo', photoURL: null }],
+    ['displayName número', { ...bobNovo, displayName: 42 }],
+    ['displayName vazio', { ...bobNovo, displayName: '' }],
+    ['photoURL número', { ...bobNovo, photoURL: 7 }],
+    ['avatarEmoji null', { ...bobNovo, avatarEmoji: null }],
+    ['avatarEmoji número', { ...bobNovo, avatarEmoji: 1 }],
+  ])('NEGA perfil fora do tipo: %s', async (_caso, entrada) => {
+    const bob = env.authenticatedContext(BOB).firestore();
+    await assertFails(
+      bob.doc(`partnerships/${PID}`).update({
+        [`memberProfiles.${BOB}`]: entrada,
+        updatedAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('PERMITE photoURL como string', async () => {
+    const bob = env.authenticatedContext(BOB).firestore();
+    await assertSucceeds(
+      bob.doc(`partnerships/${PID}`).update({
+        [`memberProfiles.${BOB}`]: { ...bobNovo, photoURL: 'https://example.com/bob.jpg' },
+        updatedAt: serverTimestamp(),
+      }),
+    );
   });
 
   it('NEGA updatedAt escolhido pelo cliente na propagação', async () => {

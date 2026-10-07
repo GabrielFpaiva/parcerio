@@ -273,14 +273,24 @@ service cloud.firestore {
     // sem a entrada existir, apagá-la passaria (o diff só afeta a própria
     // chave). Igualdade, não hasOnly: hasOnly aceita o diff vazio, e um
     // update só de updatedAt (active → active) passaria por este ramo.
+    // MemberProfile (shared/types.ts): o parceiro renderiza esta entrada, e
+    // um tipo errado vira crash na tela dele. Chaves exatas e tipos reais.
+    function isMemberProfileShape(p) {
+      return p.keys().hasOnly(['displayName', 'photoURL', 'avatarEmoji'])
+          && p.keys().hasAll(['displayName', 'photoURL', 'avatarEmoji'])
+          && p.displayName is string
+          && p.displayName.size() > 0
+          && (p.photoURL == null || p.photoURL is string)
+          && p.avatarEmoji is string;
+    }
+
     function profileUpdate() {
       return isMember(resource.data)
           && request.resource.data.diff(resource.data)
                .affectedKeys().hasOnly(['memberProfiles', 'updatedAt'])
           && request.resource.data.memberProfiles.diff(resource.data.memberProfiles)
                .affectedKeys() == [request.auth.uid].toSet()
-          && request.resource.data.memberProfiles[request.auth.uid].keys()
-               .hasOnly(['displayName', 'photoURL', 'avatarEmoji'])
+          && isMemberProfileShape(request.resource.data.memberProfiles[request.auth.uid])
           && request.resource.data.updatedAt == request.time;
     }
 
