@@ -55,7 +55,7 @@ export function PartnershipListScreen() {
         <PartnershipCard
           partnership={item}
           viewerUid={uid}
-          onPress={() => router.push({ pathname: '/partnership/[id]', params: { id: item.id } } as never)}
+          onPress={() => router.push({ pathname: '/partnership/[id]', params: { id: item.id } })}
         />
       )}
     />
