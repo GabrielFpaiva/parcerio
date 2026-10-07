@@ -29,6 +29,13 @@ export function PartnershipListScreen() {
   }
   if (uid === null || q.isLoading || q.data === undefined) return <Skeleton />;
 
+  const inviteActions = (
+    <View style={styles.actions}>
+      <Button label="Convidar um parceiro" onPress={() => router.push('/onboarding/first-invite')} />
+      <Button label="Tenho um convite" variant="ghost" onPress={() => router.push('/invite/enter')} />
+    </View>
+  );
+
   if (q.data.length === 0) {
     return (
       <View style={styles.empty}>
@@ -36,19 +43,19 @@ export function PartnershipListScreen() {
         <Text style={styles.body}>
           Uma parceria começa quando duas pessoas decidem se encontrar mais. Chama alguém.
         </Text>
-        <View style={styles.actions}>
-          <Button label="Convidar um parceiro" onPress={() => router.push('/onboarding/first-invite')} />
-          <Button label="Tenho um convite" variant="ghost" onPress={() => router.push('/invite/enter' as never)} />
-        </View>
+        <View style={styles.emptyActions}>{inviteActions}</View>
       </View>
     );
   }
 
   // A query já ordena; reordenar aqui garante a ordem mesmo se o cache vier de outra fonte.
   const sorted = [...q.data].sort((a, b) => b.temperature - a.temperature);
+  // As mesmas ações do vazio: o código é o caminho primário do convite, e é
+  // por ele que uma parceria encerrada volta.
   return (
     <FlatList
       contentContainerStyle={styles.list}
+      ListHeaderComponent={inviteActions}
       data={sorted}
       keyExtractor={(p) => p.id}
       renderItem={({ item }) => (
@@ -85,5 +92,6 @@ const styles = StyleSheet.create({
     lineHeight: theme.type.body.lineHeight,
     color: theme.colors.ink[700],
   },
-  actions: { gap: theme.space[2], marginTop: theme.space[3] },
+  actions: { gap: theme.space[2] },
+  emptyActions: { marginTop: theme.space[3] },
 });

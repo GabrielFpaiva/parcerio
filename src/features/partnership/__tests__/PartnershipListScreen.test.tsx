@@ -97,3 +97,21 @@ it('mostra o erro traduzido e tenta de novo', async () => {
   await fireEvent.press(screen.getByText('Tentar de novo'));
   expect(mockRefetch).toHaveBeenCalledTimes(1);
 });
+
+// Quem já tem parceria, mesmo encerrada, precisa de onde digitar o código do
+// convite novo (é assim que a parceria encerrada volta) e de onde convidar
+// outra pessoa.
+it('com parcerias, ainda oferece convidar e digitar um convite', async () => {
+  mockUsePartnerships.mockReturnValue({
+    isLoading: false,
+    isError: false,
+    data: [{ ...partnership('p1', 'Bob', 50), status: 'ended' }],
+    refetch: mockRefetch,
+  });
+  await render(<PartnershipListScreen />);
+  expect(screen.getByText('Bob')).toBeTruthy();
+  await fireEvent.press(screen.getByText('Convidar um parceiro'));
+  expect(mockPush).toHaveBeenLastCalledWith('/onboarding/first-invite');
+  await fireEvent.press(screen.getByText('Tenho um convite'));
+  expect(mockPush).toHaveBeenLastCalledWith('/invite/enter');
+});
