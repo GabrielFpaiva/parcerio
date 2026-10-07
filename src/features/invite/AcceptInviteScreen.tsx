@@ -44,10 +44,26 @@ export function AcceptInviteScreen({ code }: Props) {
   // Quem já aceitou e toca no link de novo: a parceria é dele, não "de outra pessoa".
   const ownPartnership = invite !== null && invite.usedBy === uid && invite.fromUid !== uid;
 
+  // Sem histórico (app aberto direto pelo link), back() não faz nada.
+  function goBack() {
+    if (router.canGoBack()) router.back();
+    else router.replace('/');
+  }
+
+  // Com histórico, troca esta tela pela visão geral. Sem histórico, a visão
+  // geral seria a única tela, sem voltar: a lista, que mostra a parceria, é
+  // o destino seguro.
+  function seePartnership(pid: string) {
+    if (router.canGoBack()) router.replace(`/partnership/${pid}`);
+    else router.replace('/');
+  }
+
   async function onAccept() {
     try {
       await accept();
-      router.replace('/');
+      // Volta à lista que já está na pilha (replace empilharia outra). A
+      // cerimônia é do BornCeremonyGate, que espera esta tela sair da frente.
+      router.dismissTo('/');
     } catch {
       // O motivo já está no estado da mutação e aparece na tela.
     }
@@ -59,15 +75,17 @@ export function AcceptInviteScreen({ code }: Props) {
     void Share.share({ message: `${greeting} convite do Parcerio ${what} — me manda outro?` });
   }
 
-  if (ownPartnership) {
+  // Já parceiros: quem reabre o link do convite que aceitou, ou o aceite
+  // recusado porque a parceria do par está ativa. Nos dois, o caminho é ela.
+  if (invite !== null && (ownPartnership || rejection === 'already-partners')) {
     return (
       <View style={styles.center}>
         <Text style={styles.title}>{REJECTION_MESSAGES['already-partners']}</Text>
         <Button
           label="Ver parceria"
-          onPress={() => router.replace(`/partnership/${partnershipId(invite.fromUid, uid)}`)}
+          onPress={() => seePartnership(partnershipId(invite.fromUid, uid))}
         />
-        <Button label="Voltar" variant="ghost" onPress={() => router.back()} />
+        <Button label="Voltar" variant="ghost" onPress={goBack} />
       </View>
     );
   }
@@ -79,7 +97,7 @@ export function AcceptInviteScreen({ code }: Props) {
         {canAskForNewInvite(rejection) && (
           <Button label="Pedir um convite novo" onPress={() => askForNewInvite(rejection)} />
         )}
-        <Button label="Voltar" variant="ghost" onPress={() => router.back()} />
+        <Button label="Voltar" variant="ghost" onPress={goBack} />
       </View>
     );
   }

@@ -26,10 +26,11 @@ export function WaitingScreen() {
     ?? (code !== null && profile.data != null ? inviteUrl(code, profile.data.displayName) : null);
   const name = params.nome?.trim() ? params.nome.trim() : null;
 
-  // Só leva à raiz: a cerimônia de nascimento é disparada pela Task 13.
+  // Só volta à raiz: a cerimônia é do BornCeremonyGate, que espera esta tela
+  // sair da frente. dismissTo, não replace: replace empilharia outra lista.
   const hasPartnership = (partnerships.data?.length ?? 0) > 0;
   useEffect(() => {
-    if (hasPartnership) router.replace('/');
+    if (hasPartnership) router.dismissTo('/');
   }, [hasPartnership, router]);
 
   return (
@@ -55,7 +56,7 @@ export function WaitingScreen() {
           loading={regenerate.isPending}
           disabled={profile.data == null}
         />
-        <Button label="Depois eu faço isso" variant="ghost" onPress={() => router.replace('/')} />
+        <Button label="Depois eu faço isso" variant="ghost" onPress={() => router.dismissTo('/')} />
       </View>
     </ScrollView>
   );

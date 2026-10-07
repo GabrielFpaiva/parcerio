@@ -5,6 +5,7 @@ import { WaitingScreen } from '../WaitingScreen';
 
 const mockCreateInvite = jest.fn();
 const mockReplace = jest.fn();
+const mockDismissTo = jest.fn();
 const mockUsePartnerships = jest.fn();
 let mockParams: { code?: string; nome?: string } = {};
 
@@ -24,7 +25,7 @@ jest.mock('@/features/partnership/hooks/usePartnerships', () => ({
   usePartnerships: (uid: string | null) => mockUsePartnerships(uid),
 }));
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ replace: mockReplace }),
+  useRouter: () => ({ replace: mockReplace, dismissTo: mockDismissTo }),
   useLocalSearchParams: () => mockParams,
 }));
 jest.mock('../services/invites', () => ({
@@ -45,6 +46,7 @@ async function renderScreen() {
 beforeEach(() => {
   mockCreateInvite.mockReset();
   mockReplace.mockReset();
+  mockDismissTo.mockReset();
   mockParams = { code: 'K7QM2X9P', nome: 'João' };
   mockUsePartnerships.mockReturnValue({ data: [], isLoading: false, isError: false });
   jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction' });
@@ -77,20 +79,23 @@ it('usa um texto neutro quando o nome não existe', async () => {
   expect(screen.getByText(/Enquanto seu convite não é aceito/)).toBeTruthy();
 });
 
-it('vai para a raiz quando a parceria aparece', async () => {
+// dismissTo, não replace: replace empilharia uma lista nova sobre a velha.
+it('volta para a raiz quando a parceria aparece', async () => {
   const view = await renderScreen();
-  expect(mockReplace).not.toHaveBeenCalled();
+  expect(mockDismissTo).not.toHaveBeenCalled();
   mockUsePartnerships.mockReturnValue({ data: [{ id: 'p' }], isLoading: false, isError: false });
   await view.rerender(
     <QueryClientProvider client={new QueryClient()}><WaitingScreen /></QueryClientProvider>,
   );
-  await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/'));
+  await waitFor(() => expect(mockDismissTo).toHaveBeenCalledWith('/'));
+  expect(mockReplace).not.toHaveBeenCalled();
 });
 
 it('"Depois eu faço isso" leva à raiz sem convite', async () => {
   await renderScreen();
   await fireEvent.press(screen.getByText('Depois eu faço isso'));
-  expect(mockReplace).toHaveBeenCalledWith('/');
+  expect(mockDismissTo).toHaveBeenCalledWith('/');
+  expect(mockReplace).not.toHaveBeenCalled();
 });
 
 it('"Gerar outro convite" cria um código novo e passa a mostrar e compartilhar o novo', async () => {

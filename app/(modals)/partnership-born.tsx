@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@/core/auth/useAuth';
 import { PartnershipBornCeremony } from '@/features/ceremony/PartnershipBornCeremony';
@@ -11,6 +11,13 @@ export default function PartnershipBornModal() {
   const router = useRouter();
   const partnership = usePartnerships(user?.uid ?? null).data?.find((p) => p.id === id);
   const closing = useRef(false);
+  const found = partnership !== undefined;
+
+  // Vista ao ABRIR, não ao fechar: o voltar do Android fecha o modal sem
+  // passar pelo X, e a cerimônia voltaria a cada abertura do app.
+  useEffect(() => {
+    if (found && id) markCeremonySeen(id).catch(() => {});
+  }, [found, id]);
 
   if (closing.current) return null;
   // Link antigo ou parceria que sumiu: nada a celebrar, volta para a raiz.
@@ -21,7 +28,6 @@ export default function PartnershipBornModal() {
       partnership={partnership}
       onDismiss={() => {
         closing.current = true;
-        markCeremonySeen(partnership.id).catch(() => {});
         if (router.canGoBack()) router.back();
         else router.replace('/');
       }}

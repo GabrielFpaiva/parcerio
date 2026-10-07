@@ -6,7 +6,16 @@ import { InviteRejectedError, acceptInvite, readInvite } from '../services/invit
 
 const mockReplace = jest.fn();
 const mockBack = jest.fn();
-jest.mock('expo-router', () => ({ useRouter: () => ({ replace: mockReplace, back: mockBack }) }));
+const mockDismissTo = jest.fn();
+let mockCanGoBack = true;
+jest.mock('expo-router', () => ({
+  useRouter: () => ({
+    replace: mockReplace,
+    back: mockBack,
+    dismissTo: mockDismissTo,
+    canGoBack: () => mockCanGoBack,
+  }),
+}));
 jest.mock('@/core/auth/useAuth', () => ({ useAuth: () => ({ user: { uid: 'me' } }) }));
 jest.mock('@/core/firebase/client', () => ({ db: {} }));
 // Sem requireActual: o módulo real puxa firebase/firestore (ESM), que o jest não transforma.
@@ -50,6 +59,7 @@ async function renderScreen() {
 let shareSpy: jest.SpyInstance;
 beforeEach(() => {
   jest.resetAllMocks();
+  mockCanGoBack = true;
   shareSpy = jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction' });
 });
 
@@ -81,7 +91,6 @@ describe('AcceptInviteScreen', () => {
     ['self', 'Esse convite é seu.', false],
     ['used', 'Esse convite já virou parceria de outra pessoa.', true],
     ['expired', 'Esse convite esfriou.', true],
-    ['already-partners', 'Vocês já são parceiros.', false],
   ] as const)('recusa %s no aceite', async (reason, message, canAsk) => {
     mockRead.mockResolvedValue(invite());
     mockAccept.mockRejectedValue(new InviteRejectedError(reason));
@@ -89,6 +98,44 @@ describe('AcceptInviteScreen', () => {
     await fireEvent.press(await screen.findByLabelText('Aceitar'));
     expect(await screen.findByText(message)).toBeTruthy();
     expect(screen.queryByLabelText('Pedir um convite novo') !== null).toBe(canAsk);
+  });
+
+  it('recusa already-partners no aceite leva à parceria, como quem reabre o link', async () => {
+    mockRead.mockResolvedValue(invite());
+    mockAccept.mockRejectedValue(new InviteRejectedError('already-partners'));
+    await renderScreen();
+    await fireEvent.press(await screen.findByLabelText('Aceitar'));
+    expect(await screen.findByText('Vocês já são parceiros.')).toBeTruthy();
+    expect(screen.queryByLabelText('Pedir um convite novo')).toBeNull();
+    await fireEvent.press(screen.getByLabelText('Ver parceria'));
+    expect(mockReplace).toHaveBeenCalledWith('/partnership/ana_me');
+  });
+
+  it('"Voltar" sem histórico (app aberto pelo link) vai para a raiz', async () => {
+    mockCanGoBack = false;
+    mockRead.mockResolvedValue(null);
+    await renderScreen();
+    await fireEvent.press(await screen.findByLabelText('Voltar'));
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledWith('/');
+  });
+
+  it('"Voltar" da parceria já existente também cai na raiz sem histórico', async () => {
+    mockCanGoBack = false;
+    mockRead.mockResolvedValue(invite({ usedBy: 'me', status: 'accepted' }));
+    await renderScreen();
+    await fireEvent.press(await screen.findByLabelText('Voltar'));
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledWith('/');
+  });
+
+  it('"Ver parceria" sem histórico vai para a lista, onde a parceria está', async () => {
+    // Trocar a tela única pela visão geral deixaria a pessoa sem voltar.
+    mockCanGoBack = false;
+    mockRead.mockResolvedValue(invite({ usedBy: 'me', status: 'accepted' }));
+    await renderScreen();
+    await fireEvent.press(await screen.findByLabelText('Ver parceria'));
+    expect(mockReplace).toHaveBeenCalledWith('/');
   });
 
   it('já mostra a recusa lendo o convite, sem tentar aceitar', async () => {
@@ -138,12 +185,14 @@ describe('AcceptInviteScreen', () => {
     });
   });
 
-  it('aceitar chama o serviço e vai para a raiz', async () => {
+  it('aceitar chama o serviço e volta para a lista que já existe', async () => {
     mockRead.mockResolvedValue(invite());
     mockAccept.mockResolvedValue({ pid: 'ana_me', reactivated: false });
     await renderScreen();
     await fireEvent.press(await screen.findByLabelText('Aceitar'));
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/'));
+    // dismissTo, não replace: replace empilharia uma lista nova sobre a velha.
+    await waitFor(() => expect(mockDismissTo).toHaveBeenCalledWith('/'));
+    expect(mockReplace).not.toHaveBeenCalled();
     expect(mockAccept).toHaveBeenCalledWith({}, 'AB3D4F7H', 'me');
   });
 
@@ -154,6 +203,7 @@ describe('AcceptInviteScreen', () => {
     await fireEvent.press(await screen.findByLabelText('Aceitar'));
     expect(await screen.findByText('Sem conexão. Tenta de novo.')).toBeTruthy();
     expect(mockReplace).not.toHaveBeenCalled();
+    expect(mockDismissTo).not.toHaveBeenCalled();
   });
 
   it('desabilita o botão nativamente enquanto aceita', async () => {
