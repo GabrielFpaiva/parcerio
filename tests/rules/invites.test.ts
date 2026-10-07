@@ -1,7 +1,7 @@
 import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import type { RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { Timestamp } from 'firebase/firestore';
-import { ALICE, BOB, CAROL, createTestEnv } from './helpers';
+import { ALICE, BOB, CAROL, createTestEnv, validProfile } from './helpers';
 import { seedInvite, seedPartnership, seedUsers, validInvite, validPartnership } from './factories';
 
 let env: RulesTestEnvironment;
@@ -110,6 +110,49 @@ describe('invites — create', () => {
     const comCampoExtra = validInvite(ALICE);
     (comCampoExtra.fromProfile as Record<string, unknown>).bio = 'campo extra';
     await assertFails(alice.doc('invites/AB3D4F7H').set(comCampoExtra));
+  });
+
+  // users.create usa hasOnly, não hasAll: um users doc pode não ter photoURL
+  // nem avatarEmoji. Com acesso direto (u.photoURL) a chave ausente dava erro
+  // e essa pessoa nunca conseguia gerar convite. Ausente em users ⇒ ausente
+  // ou null no fromProfile — nunca um valor livre.
+  describe('quando users/{alice} não tem photoURL nem avatarEmoji', () => {
+    beforeEach(async () => {
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        const { photoURL: _p, avatarEmoji: _a, ...semFoto } = validProfile(ALICE, 'aliceuid');
+        await ctx.firestore().doc(`users/${ALICE}`).set(semFoto);
+      });
+    });
+
+    const inviteWith = (extra: Record<string, unknown>) => {
+      const base = validInvite(ALICE);
+      const { displayName, handle } = base.fromProfile;
+      return { ...base, fromProfile: { displayName, handle, ...extra } };
+    };
+
+    it('PERMITE o fromProfile sem as chaves ausentes', async () => {
+      const alice = env.authenticatedContext(ALICE).firestore();
+      await assertSucceeds(alice.doc('invites/AB3D4F7H').set(inviteWith({})));
+    });
+
+    it('PERMITE as chaves ausentes gravadas como null', async () => {
+      const alice = env.authenticatedContext(ALICE).firestore();
+      await assertSucceeds(
+        alice.doc('invites/AB3D4F7H').set(inviteWith({ photoURL: null, avatarEmoji: null })),
+      );
+    });
+
+    it('NEGA preencher o avatarEmoji ausente com valor livre', async () => {
+      const alice = env.authenticatedContext(ALICE).firestore();
+      await assertFails(alice.doc('invites/AB3D4F7H').set(inviteWith({ avatarEmoji: '💩' })));
+    });
+
+    it('NEGA preencher o photoURL ausente com valor livre', async () => {
+      const alice = env.authenticatedContext(ALICE).firestore();
+      await assertFails(
+        alice.doc('invites/AB3D4F7H').set(inviteWith({ photoURL: 'https://evil.example/a.jpg' })),
+      );
+    });
   });
 });
 

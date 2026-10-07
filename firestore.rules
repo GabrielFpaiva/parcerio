@@ -88,12 +88,15 @@ service cloud.firestore {
 
     // Sem isto, qualquer um geraria um convite exibindo o nome e a foto de
     // outra pessoa — o vetor de engenharia social mais óbvio deste produto.
+    // get(campo, null) pelo mesmo motivo de matchesUserProfile (abaixo): um
+    // users doc pode não ter photoURL/avatarEmoji, e o acesso direto dava
+    // erro e impedia essa pessoa de gerar convite.
     function matchesOwnProfile(p) {
       let u = userDoc(request.auth.uid);
-      return p.displayName == u.displayName
-          && p.photoURL == u.photoURL
-          && p.avatarEmoji == u.avatarEmoji
-          && p.handle == u.handle;
+      return p.get('displayName', null) == u.get('displayName', null)
+          && p.get('photoURL', null) == u.get('photoURL', null)
+          && p.get('avatarEmoji', null) == u.get('avatarEmoji', null)
+          && p.get('handle', null) == u.get('handle', null);
     }
 
     // Convite ainda utilizável: pendente, não usado e dentro dos 7 dias
