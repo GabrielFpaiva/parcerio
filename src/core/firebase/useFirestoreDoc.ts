@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useQuery, useQueryClient, type QueryKey, type UseQueryResult } from '@tanstack/react-query';
 import { getDoc, onSnapshot, type DocumentReference } from 'firebase/firestore';
+import { publishListenerError } from './publishListenerError';
 
 /**
  * Único ponto de integração entre o listener do Firestore e o cache do React
@@ -15,9 +16,13 @@ export function useFirestoreDoc<T>(
 
   useEffect(() => {
     if (ref === null) return;
-    return onSnapshot(ref, (snap) => {
-      qc.setQueryData<T | null>(key, snap.exists() ? (snap.data() as T) : null);
-    });
+    return onSnapshot(
+      ref,
+      (snap) => {
+        qc.setQueryData<T | null>(key, snap.exists() ? (snap.data() as T) : null);
+      },
+      (error) => publishListenerError(qc, key, error),
+    );
     // `key` é serializável; a identidade do array muda a cada render.
   }, [ref?.path, qc, JSON.stringify(key)]);
 

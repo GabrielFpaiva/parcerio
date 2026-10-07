@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useQuery, useQueryClient, type QueryKey, type UseQueryResult } from '@tanstack/react-query';
-import { getDocs, onSnapshot, type Query } from 'firebase/firestore';
+import { getDocs, onSnapshot, queryEqual, type Query } from 'firebase/firestore';
+import { publishListenerError } from './publishListenerError';
 
 /** Versão coleção de useFirestoreDoc: mesma ponte listener -> cache. */
 export function useFirestoreCollection<T>(
@@ -9,16 +10,28 @@ export function useFirestoreCollection<T>(
 ): UseQueryResult<T[]> {
   const qc = useQueryClient();
 
+  // A query costuma ser montada inline; só troca de identidade se for outra
+  // query de fato, para não reinscrever o listener a cada render.
+  const stable = useRef<Query | null>(q);
+  if (q === null || stable.current === null || !queryEqual(stable.current, q)) {
+    stable.current = q;
+  }
+  const current = stable.current;
+
   useEffect(() => {
-    if (q === null) return;
-    return onSnapshot(q, (snap) => {
-      qc.setQueryData<T[]>(
-        key,
-        snap.docs.map((d) => d.data() as T),
-      );
-    });
+    if (current === null) return;
+    return onSnapshot(
+      current,
+      (snap) => {
+        qc.setQueryData<T[]>(
+          key,
+          snap.docs.map((d) => d.data() as T),
+        );
+      },
+      (error) => publishListenerError(qc, key, error),
+    );
     // `key` é serializável; a identidade do array muda a cada render.
-  }, [q, qc, JSON.stringify(key)]);
+  }, [current, qc, JSON.stringify(key)]);
 
   return useQuery<T[]>({
     queryKey: key,
