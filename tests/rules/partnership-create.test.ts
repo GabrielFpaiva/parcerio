@@ -1,0 +1,194 @@
+import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
+import type { RulesTestEnvironment } from '@firebase/rules-unit-testing';
+import { Timestamp } from 'firebase/firestore';
+import { ALICE, BOB, CAROL, createTestEnv } from './helpers';
+import { seedInvite, seedUsers, validInvite, validPartnership } from './factories';
+
+let env: RulesTestEnvironment;
+
+const CODE = 'AB3D4F7H';
+const PID = [ALICE, BOB].sort().join('_');
+
+beforeAll(async () => { env = await createTestEnv(); });
+afterAll(() => env.cleanup());
+
+beforeEach(async () => {
+  await env.clearFirestore();
+  await seedUsers(env, [ALICE, BOB, CAROL]);
+  // Convite da Alice, pendente e recente. Bob é quem aceita.
+  await seedInvite(env, CODE, validInvite(ALICE));
+});
+
+/** Bob aceitando o convite da Alice, com um campo trocado. */
+function bobAccepts(overrides: Record<string, unknown> = {}) {
+  const bob = env.authenticatedContext(BOB).firestore();
+  return bob.doc(`partnerships/${PID}`).set(validPartnership(ALICE, BOB, CODE, overrides));
+}
+
+describe('nascimento — o caminho que deve funcionar', () => {
+  it('PERMITE que o convidado crie a parceria com o convite válido', async () => {
+    await assertSucceeds(bobAccepts());
+  });
+});
+
+describe('nascimento — consentimento', () => {
+  it('NEGA criar parceria sem apontar para convite nenhum', async () => {
+    await assertFails(bobAccepts({ bornFromInvite: 'NAOEXISTE' }));
+  });
+
+  it('NEGA usar convite de terceiro para virar parceiro de quem não convidou', async () => {
+    // Convite da Carol, mas Bob tenta virar parceiro da Alice com ele.
+    await seedInvite(env, 'CAROLCOD', validInvite(CAROL));
+    await assertFails(bobAccepts({ bornFromInvite: 'CAROLCOD' }));
+  });
+
+  it('NEGA apontar o dono do convite como createdBy sem ele estar em members', async () => {
+    // O convite da Carol bate com createdBy: CAROL — só `createdBy in members`
+    // impede que ele vire uma parceria Alice–Bob que nenhum dos dois pediu.
+    await seedInvite(env, 'CAROLCOD', validInvite(CAROL));
+    await assertFails(bobAccepts({ bornFromInvite: 'CAROLCOD', createdBy: CAROL }));
+  });
+
+  it('NEGA convite já usado', async () => {
+    await seedInvite(env, 'USED1234', validInvite(ALICE, { usedBy: CAROL, status: 'accepted' }));
+    await assertFails(bobAccepts({ bornFromInvite: 'USED1234' }));
+  });
+
+  // O teste acima troca usedBy e status juntos, então passa por qualquer um
+  // dos dois motivos. Os dois abaixo isolam cada guarda.
+  it('NEGA convite com usedBy preenchido, mesmo ainda pending', async () => {
+    await seedInvite(env, 'USED1234', validInvite(ALICE, { usedBy: CAROL }));
+    await assertFails(bobAccepts({ bornFromInvite: 'USED1234' }));
+  });
+
+  it('NEGA convite com status accepted, mesmo com usedBy nulo', async () => {
+    await seedInvite(env, 'USED1234', validInvite(ALICE, { status: 'accepted' }));
+    await assertFails(bobAccepts({ bornFromInvite: 'USED1234' }));
+  });
+
+  it('NEGA convite com mais de 7 dias', async () => {
+    const old = Timestamp.fromMillis(Date.now() - 8 * 86_400_000);
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc('invites/OLDCODE1').set({ ...validInvite(ALICE), createdAt: old });
+    });
+    await assertFails(bobAccepts({ bornFromInvite: 'OLDCODE1' }));
+  });
+
+  it('NEGA que o dono do convite crie a parceria sozinho', async () => {
+    const alice = env.authenticatedContext(ALICE).firestore();
+    await assertFails(
+      alice.doc(`partnerships/${PID}`).set(validPartnership(ALICE, BOB, CODE, { createdBy: BOB })),
+    );
+  });
+
+  it('NEGA que o dono do convite se declare createdBy e aceite o próprio convite', async () => {
+    // O teste acima usa createdBy: BOB e cai em `inv.fromUid == inviterUid`.
+    // Aqui o convite bate com createdBy, e só sobram as duas guardas
+    // redundantes: `createdBy != auth.uid` (create) e `inv.fromUid !=
+    // accepterUid` (inviteAuthorizes). Cada uma sozinha basta — este teste só
+    // fica vermelho se as duas caírem juntas.
+    const alice = env.authenticatedContext(ALICE).firestore();
+    await assertFails(alice.doc(`partnerships/${PID}`).set(validPartnership(ALICE, BOB, CODE)));
+  });
+
+  it('NEGA criar parceria entre duas outras pessoas', async () => {
+    const carol = env.authenticatedContext(CAROL).firestore();
+    await assertFails(carol.doc(`partnerships/${PID}`).set(validPartnership(ALICE, BOB, CODE)));
+  });
+
+  it('NEGA parceria consigo mesmo', async () => {
+    const bob = env.authenticatedContext(BOB).firestore();
+    await assertFails(
+      bob.doc(`partnerships/${BOB}_${BOB}`).set({
+        ...validPartnership(ALICE, BOB, CODE),
+        id: `${BOB}_${BOB}`,
+        members: [BOB, BOB],
+        createdBy: BOB,
+      }),
+    );
+  });
+});
+
+describe('nascimento — integridade do id', () => {
+  it('NEGA id que não corresponde aos membros ordenados', async () => {
+    const bob = env.authenticatedContext(BOB).firestore();
+    await assertFails(
+      bob.doc('partnerships/id-inventado').set(validPartnership(ALICE, BOB, CODE, { id: 'id-inventado' })),
+    );
+  });
+
+  it('NEGA campo id diferente do id do documento', async () => {
+    // O teste acima erra o caminho e o campo juntos — cai em pidMatches antes.
+    // Aqui o caminho está certo e só o campo mente.
+    await assertFails(bobAccepts({ id: 'id-inventado' }));
+  });
+
+  it('NEGA members fora de ordem — senão o mesmo par teria dois documentos', async () => {
+    const reversed = [ALICE, BOB].sort().reverse();
+    await assertFails(bobAccepts({ members: reversed }));
+  });
+
+  it('NEGA o par invertido mesmo com id coerente com a ordem invertida', async () => {
+    // O teste acima mantém o caminho em PID e cai em `pid == members[0]_members[1]`.
+    // Aqui caminho, id e members concordam entre si na ordem errada — só
+    // `members[0] < members[1]` impede o segundo documento do mesmo par.
+    const reversed = [ALICE, BOB].sort().reverse();
+    const reversedId = reversed.join('_');
+    const bob = env.authenticatedContext(BOB).firestore();
+    await assertFails(
+      bob.doc(`partnerships/${reversedId}`).set(
+        validPartnership(ALICE, BOB, CODE, { id: reversedId, members: reversed }),
+      ),
+    );
+  });
+
+  it('NEGA members com três pessoas', async () => {
+    await assertFails(bobAccepts({ members: [ALICE, BOB, CAROL].sort() }));
+  });
+});
+
+describe('nascimento — cada número é literal na regra', () => {
+  const forjas: Array<[string, Record<string, unknown>]> = [
+    ['xparceria', { xparceria: 999_999 }],
+    ['level', { level: 42 }],
+    ['xpIntoLevel', { xpIntoLevel: 121 }],
+    ['xpForNextLevel', { xpForNextLevel: 1 }],
+    ['temperature', { temperature: 100 }],
+    ['temperatureBand', { temperatureBand: 'burning' }],
+    ['status', { status: 'hibernating' }],
+    ['achievements', { achievements: ['o-comeco', 'lenda'] }],
+    ['superPartnershipId', { superPartnershipId: 'super-1' }],
+    ['streak', { streak: { current: 99, longest: 99, lastDay: '2026-08-06', freezesLeft: 9 } }],
+    ['stats.encounterCount', {
+      stats: {
+        encounterCount: 50, totalMinutesTogether: 9999, lastEncounterAt: null,
+        daysSinceLastEncounter: 0, firstEncounterAt: null,
+        longestEncounterMinutes: 0, maxDistanceKm: 0, placesVisited: 0,
+      },
+    }],
+  ];
+
+  it.each(forjas)('NEGA forjar %s no nascimento', async (_campo, override) => {
+    await assertFails(bobAccepts(override));
+  });
+
+  it('NEGA createdAt escolhido pelo cliente', async () => {
+    await assertFails(bobAccepts({ createdAt: Timestamp.fromMillis(0) }));
+  });
+
+  it('NEGA activatedAt escolhido pelo cliente', async () => {
+    await assertFails(bobAccepts({ activatedAt: Timestamp.fromMillis(0) }));
+  });
+
+  // A spec (§3.2) lista updatedAt: request.time entre os literais do
+  // nascimento; o brief não o fixava.
+  it('NEGA updatedAt escolhido pelo cliente', async () => {
+    await assertFails(bobAccepts({ updatedAt: Timestamp.fromMillis(0) }));
+  });
+
+  it('NEGA campo fora do shape de PartnershipDoc', async () => {
+    // Um campo livre aqui seria um número que o cliente escolheu — e a Spec 4
+    // pode vir a ler qualquer coisa que esteja no documento.
+    await assertFails(bobAccepts({ xparceriaBonus: 500 }));
+  });
+});
