@@ -1,5 +1,6 @@
 import {
   type Timestamp,
+  collection,
   type DocumentReference,
   doc,
   getDoc,
@@ -10,7 +11,7 @@ import {
   type Transaction,
 } from 'firebase/firestore';
 import { checkInvite, generateInviteCode, type InviteRejection } from '@shared/invite';
-import { buildBirthPartnership, partnershipId } from '@shared/partnership';
+import { buildBirthPartnership, buildReactivationUpdate, partnershipId } from '@shared/partnership';
 import type { InviteDoc, MemberProfile, PartnershipDoc, UserDoc } from '@shared/types';
 
 export const INVITE_LANDING_BASE = 'https://parceria-db699.web.app';
@@ -152,8 +153,7 @@ export async function acceptInvite(
     const pid = partnershipId(invite.fromUid, accepterUid);
     const partnershipRef = doc(db, 'partnerships', pid);
     const existing = await readOwnPartnership(tx, partnershipRef);
-    // Reativação de parceria encerrada entra com a Task 4 (regra de update).
-    if (existing) {
+    if (existing && existing.status !== 'ended') {
       throw new InviteRejectedError('already-partners');
     }
 
@@ -163,6 +163,19 @@ export async function acceptInvite(
     };
 
     tx.update(inviteRef, { usedBy: accepterUid, status: 'accepted' });
+
+    if (existing) {
+      tx.update(partnershipRef, {
+        ...buildReactivationUpdate(memberProfiles, code),
+        updatedAt: serverTimestamp(),
+      });
+      tx.set(doc(collection(db, `partnerships/${pid}/events`)), {
+        type: 'partnership_resumed',
+        occurredAt: serverTimestamp(),
+        xpAwarded: 0,
+      });
+      return { pid, reactivated: true };
+    }
 
     const birth = buildBirthPartnership({
       inviter: { uid: invite.fromUid, profile: memberProfiles[invite.fromUid]! },

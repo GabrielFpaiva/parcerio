@@ -1,8 +1,12 @@
 import type { RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import {
+  collection,
   doc,
   getDoc,
+  getDocs,
+  query,
   setLogLevel,
+  where,
   type Firestore,
 } from 'firebase/firestore';
 import { INVITE_TTL_MS } from '../../shared/invite';
@@ -151,5 +155,47 @@ describe('fraude e casos de borda', () => {
     // E o convite novo continua pendente: a recusa não queima o convite.
     const invite = await getDoc(doc(dbOf(BOB), 'invites', second));
     expect(invite.data()).toMatchObject({ usedBy: null, status: 'pending' });
+  });
+});
+
+describe('reativação', () => {
+  it('reativa a parceria encerrada preservando XParceria e nível', async () => {
+    const first = await aliceInvites();
+    await acceptInvite(dbOf(BOB), first, BOB);
+
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc(`partnerships/${PID}`)
+        .update({ status: 'ended', xparceria: 4321, level: 9 });
+    });
+
+    const second = await aliceInvites();
+    const result = await acceptInvite(dbOf(BOB), second, BOB);
+    expect(result).toEqual({ pid: PID, reactivated: true });
+
+    const snap = await getDoc(doc(dbOf(BOB), 'partnerships', PID));
+    expect(snap.data()).toMatchObject({
+      status: 'active',
+      temperature: 50,
+      xparceria: 4321,   // nada é perdido
+      level: 9,
+      bornFromInvite: second,
+    });
+  });
+
+  it('grava partnership_resumed em vez de reconceder o nascimento', async () => {
+    const first = await aliceInvites();
+    await acceptInvite(dbOf(BOB), first, BOB);
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc(`partnerships/${PID}`).update({ status: 'ended' });
+    });
+
+    const second = await aliceInvites();
+    await acceptInvite(dbOf(BOB), second, BOB);
+
+    const evs = await getDocs(
+      query(collection(dbOf(BOB), `partnerships/${PID}/events`), where('type', '==', 'partnership_resumed')),
+    );
+    expect(evs.size).toBe(1);
+    expect(evs.docs[0]!.get('xpAwarded')).toBe(0);
   });
 });
