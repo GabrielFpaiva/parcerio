@@ -196,6 +196,8 @@ describe('reativação', () => {
       query(collection(dbOf(BOB), `partnerships/${PID}/events`), where('type', '==', 'partnership_resumed')),
     );
     expect(evs.size).toBe(1);
+    // Id = o código do convite novo: é o evento que a regra da reativação confere.
+    expect(evs.docs[0]!.id).toBe(second);
     expect(evs.docs[0]!.get('xpAwarded')).toBe(0);
   });
 });

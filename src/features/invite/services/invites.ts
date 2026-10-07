@@ -1,7 +1,5 @@
 import {
   type Timestamp,
-  collection,
-  type DocumentReference,
   doc,
   getDoc,
   runTransaction,
@@ -95,28 +93,6 @@ async function memberProfileOf(tx: Transaction, db: Firestore, uid: string): Pro
 }
 
 /**
- * A parceria do par, ou null se ela ainda não existe. A regra de leitura é
- * `isMember(resource.data)`, e documento inexistente não tem `resource` —
- * então ler uma parceria que não existe volta PERMISSION_DENIED, não um
- * snapshot vazio. Como o id carrega o uid de quem lê, a parceria existente
- * sempre tem essa pessoa em `members` e a leitura passa; a negação aqui só
- * significa "não existe". Se não fosse isso, o commit ainda seria barrado.
- */
-async function readOwnPartnership(
-  tx: Transaction,
-  ref: DocumentReference,
-): Promise<PartnershipDoc | null> {
-  try {
-    const snap = await tx.get(ref);
-    return snap.exists() ? (snap.data() as PartnershipDoc) : null;
-  } catch (error) {
-    // Pelo código, não por instanceof: o SDK pode vir duplicado no bundle.
-    if ((error as { code?: unknown }).code === 'permission-denied') return null;
-    throw error;
-  }
-}
-
-/**
  * Nascimento inteiro numa transação: parceria, evento e baixa do convite.
  * A regra exige os dois juntos nos dois sentidos — a parceria só nasce se o
  * convite for consumido no mesmo commit, e o convite só vira `accepted` se a
@@ -152,7 +128,10 @@ export async function acceptInvite(
 
     const pid = partnershipId(invite.fromUid, accepterUid);
     const partnershipRef = doc(db, 'partnerships', pid);
-    const existing = await readOwnPartnership(tx, partnershipRef);
+    // A regra libera `get` de parceria inexistente para quem compõe o pid,
+    // então ausência é snapshot vazio; PERMISSION_DENIED aqui é real e propaga.
+    const snap = await tx.get(partnershipRef);
+    const existing = snap.exists() ? (snap.data() as PartnershipDoc) : null;
     if (existing && existing.status !== 'ended') {
       throw new InviteRejectedError('already-partners');
     }
@@ -169,7 +148,8 @@ export async function acceptInvite(
         ...buildReactivationUpdate(memberProfiles, code),
         updatedAt: serverTimestamp(),
       });
-      tx.set(doc(collection(db, `partnerships/${pid}/events`)), {
+      // Id = o código do convite: é o evento que a regra da reativação confere.
+      tx.set(doc(db, `partnerships/${pid}/events`, code), {
         type: 'partnership_resumed',
         occurredAt: serverTimestamp(),
         xpAwarded: 0,
@@ -188,7 +168,7 @@ export async function acceptInvite(
       activatedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
-    // Id fixo: um segundo nascimento do mesmo par colide em vez de duplicar.
+    // Id fixo `born`: a regra do nascimento confere este evento no pós-commit.
     tx.set(doc(db, `partnerships/${pid}/events`, 'born'), {
       type: 'partnership_born',
       occurredAt: serverTimestamp(),
