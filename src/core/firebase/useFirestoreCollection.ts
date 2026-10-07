@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useQuery, useQueryClient, type QueryKey, type UseQueryResult } from '@tanstack/react-query';
 import { getDocs, onSnapshot, queryEqual, type Query } from 'firebase/firestore';
 import { publishListenerError } from './publishListenerError';
+import { useListenerRevival } from './useListenerRevival';
 
 /** Versão coleção de useFirestoreDoc: mesma ponte listener -> cache. */
 export function useFirestoreCollection<T>(
@@ -18,6 +19,20 @@ export function useFirestoreCollection<T>(
   }
   const current = stable.current;
 
+  const result = useQuery<T[]>({
+    queryKey: key,
+    enabled: q !== null,
+    // O listener é quem mantém o cache em dia. Sem staleTime infinito, cada
+    // observer novo (Gate, lista, Waiting) faria um getDocs no mount, e a
+    // resposta podia chegar depois de um snapshot mais novo e sobrescrevê-lo.
+    staleTime: Infinity,
+    queryFn: async () => {
+      const snap = await getDocs(q!);
+      return snap.docs.map((d) => d.data() as T);
+    },
+  });
+  const { generation, markDead } = useListenerRevival(result.dataUpdatedAt);
+
   useEffect(() => {
     if (current === null) return;
     return onSnapshot(
@@ -28,17 +43,13 @@ export function useFirestoreCollection<T>(
           snap.docs.map((d) => d.data() as T),
         );
       },
-      (error) => publishListenerError(qc, key, error),
+      (error) => {
+        markDead();
+        publishListenerError(qc, key, error);
+      },
     );
     // `key` é serializável; a identidade do array muda a cada render.
-  }, [current, qc, JSON.stringify(key)]);
+  }, [current, qc, JSON.stringify(key), generation]);
 
-  return useQuery<T[]>({
-    queryKey: key,
-    enabled: q !== null,
-    queryFn: async () => {
-      const snap = await getDocs(q!);
-      return snap.docs.map((d) => d.data() as T);
-    },
-  });
+  return result;
 }

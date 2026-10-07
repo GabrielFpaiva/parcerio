@@ -2,8 +2,9 @@ import type { QueryClient, QueryKey } from '@tanstack/react-query';
 
 /**
  * Empurra o erro de um listener do Firestore para o estado da query, para a
- * tela ler por `q.error` (e traduzir com firestoreErrorMessage). O próximo
- * snapshot bem-sucedido limpa o erro via setQueryData.
+ * tela ler por `q.error` (e traduzir com firestoreErrorMessage). O listener
+ * que errou não emite mais: quem limpa o erro é o refetch do "tentar de
+ * novo", que também reinscreve o listener (useListenerRevival).
  */
 export function publishListenerError(qc: QueryClient, key: QueryKey, error: unknown): void {
   qc.getQueryCache()
