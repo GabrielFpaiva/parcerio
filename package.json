@@ -55,7 +55,7 @@
     "preset": "jest-expo",
     "testPathIgnorePatterns": [
       "/node_modules/",
-      "<rootDir>/tests/rules/"
+      "<rootDir>/tests/"
     ]
   }
 }
