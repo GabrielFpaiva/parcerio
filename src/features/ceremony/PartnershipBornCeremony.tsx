@@ -1,5 +1,13 @@
 import { useEffect, useRef } from 'react';
-import { AccessibilityInfo, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  AccessibilityInfo,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import * as Haptics from 'expo-haptics';
 import Animated, {
   useAnimatedStyle,
@@ -9,6 +17,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { Avatar } from '@/core/ui/Avatar';
+import { XParceriaBar } from '@/core/ui/XParceriaBar';
 import { theme } from '@/core/ui/theme';
 import { XP } from '@shared/constants';
 import type { PartnershipDoc } from '@shared/types';
@@ -47,7 +56,8 @@ export function PartnershipBornCeremony({ partnership, onDismiss }: Props) {
     let cancelado = false;
     const timers: ReturnType<typeof setTimeout>[] = [];
 
-    void AccessibilityInfo.isReduceMotionEnabled().then((reduce) => {
+    // Se a consulta falhar, o estado final é o mais seguro: nada fica invisível.
+    void AccessibilityInfo.isReduceMotionEnabled().catch(() => true).then((reduce) => {
       if (cancelado) return;
       if (reduce) {
         approach.value = 1;
@@ -101,7 +111,8 @@ export function PartnershipBornCeremony({ partnership, onDismiss }: Props) {
     transform: [{ scale: 0.6 + 0.4 * level.value }],
   }));
   const fillStyle = useAnimatedStyle(() => ({
-    width: `${bar.value * (partnership.xpIntoLevel / partnership.xpForNextLevel) * 100}%`,
+    transform: [{ scaleX: bar.value }],
+    transformOrigin: 'left',
   }));
   const xpTextStyle = useAnimatedStyle(() => ({ opacity: bar.value }));
   const achievementStyle = useAnimatedStyle(() => ({
@@ -145,14 +156,13 @@ export function PartnershipBornCeremony({ partnership, onDismiss }: Props) {
         </Animated.Text>
 
         <View style={styles.xp}>
-          <View
-            accessibilityRole="progressbar"
-            accessibilityLabel="Progresso de XParceria"
-            accessibilityValue={{ min: 0, max: partnership.xpForNextLevel, now: partnership.xpIntoLevel }}
-            style={styles.track}
-          >
-            <Animated.View style={[styles.fill, fillStyle]} />
-          </View>
+          <XParceriaBar
+            level={partnership.level}
+            xpIntoLevel={partnership.xpIntoLevel}
+            FillComponent={Animated.View}
+            fillStyle={fillStyle as StyleProp<ViewStyle>}
+            hideLabel
+          />
           <Animated.Text style={[styles.xpText, xpTextStyle]}>
             {`+${XP.PARTNERSHIP_BORN} XParceria · Temperatura ${partnership.temperature}`}
           </Animated.Text>
@@ -211,14 +221,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   xp: { width: '100%', maxWidth: 320, gap: theme.space[2], alignItems: 'center' },
-  track: {
-    width: '100%',
-    height: 10,
-    borderRadius: theme.radius.full,
-    backgroundColor: theme.colors.ink[100],
-    overflow: 'hidden',
-  },
-  fill: { height: '100%', backgroundColor: theme.colors.brand[500] },
   xpText: { fontSize: theme.type.callout.fontSize, fontWeight: '500', color: theme.colors.ink[700] },
   achievement: {
     marginTop: theme.space[3],

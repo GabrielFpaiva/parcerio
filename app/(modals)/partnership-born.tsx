@@ -21,7 +21,7 @@ export default function PartnershipBornModal() {
       partnership={partnership}
       onDismiss={() => {
         closing.current = true;
-        void markCeremonySeen(partnership.id);
+        markCeremonySeen(partnership.id).catch(() => {});
         if (router.canGoBack()) router.back();
         else router.replace('/');
       }}

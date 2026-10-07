@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Timestamp } from 'firebase/firestore';
 import type { PartnershipDoc } from '@shared/types';
 
@@ -25,29 +25,29 @@ export function useBornCeremony(partnerships: PartnershipDoc[] | undefined) {
     if (partnerships === undefined) return;
     let cancelado = false;
 
+    // `avaliadas` só recebe uma parceria depois da decisão: uma execução
+    // cancelada no meio do await não reserva nada, e a seguinte reavalia.
+    // getItem/setItem são idempotentes, então reavaliar é seguro.
     void (async () => {
       for (const p of partnerships) {
-        if (cancelado) return;
         if (p.status !== 'active' || avaliadas.current.has(p.id)) continue;
-        avaliadas.current.add(p.id);
 
         const jaVista = (await AsyncStorage.getItem(chave(p.id))) !== null;
-        if (cancelado) {
-          // A próxima execução do efeito precisa reavaliar esta parceria.
-          avaliadas.current.delete(p.id);
-          return;
+        if (cancelado) return;
+        if (jaVista) {
+          avaliadas.current.add(p.id);
+          continue;
         }
-        if (jaVista) continue;
 
+        // createdAt ausente vira 0 ("antiga"): hoje o nascimento é transacional
+        // e o listener só vê o doc com o timestamp já resolvido.
         const nascidaMs = (p.createdAt as Timestamp | null)?.toMillis?.() ?? 0;
         if (Date.now() - nascidaMs > JANELA_MS) {
           await markCeremonySeen(p.id); // vista em silêncio
+          avaliadas.current.add(p.id);
           continue;
         }
-        if (cancelado) {
-          avaliadas.current.delete(p.id);
-          return;
-        }
+        avaliadas.current.add(p.id);
         setPending(p);
         return;
       }
@@ -58,11 +58,5 @@ export function useBornCeremony(partnerships: PartnershipDoc[] | undefined) {
     };
   }, [partnerships]);
 
-  const dismiss = useCallback(async () => {
-    if (pending === null) return;
-    await markCeremonySeen(pending.id);
-    setPending(null);
-  }, [pending]);
-
-  return { pending, dismiss };
+  return { pending };
 }

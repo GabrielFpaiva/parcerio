@@ -11,6 +11,8 @@ export default function RootLayout() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(auth)" options={{ animation: 'none' }} />
+          <Stack.Screen name="(app)" options={{ animation: 'none' }} />
           <Stack.Screen name="(modals)" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
         </Stack>
       </AuthProvider>

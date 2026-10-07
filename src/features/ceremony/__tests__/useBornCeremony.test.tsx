@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import type { PartnershipDoc, PartnershipStatus } from '@shared/types';
-import { useBornCeremony } from '../useBornCeremony';
+import { markCeremonySeen, useBornCeremony } from '../useBornCeremony';
 
 function partnership(id: string, ageMs: number, status: PartnershipStatus = 'active'): PartnershipDoc {
   return {
@@ -36,9 +36,8 @@ describe('useBornCeremony', () => {
     const first = await renderHook(() => useBornCeremony(lista));
     await waitFor(() => expect(first.result.current.pending).not.toBeNull());
     await act(async () => {
-      await first.result.current.dismiss();
+      await markCeremonySeen('p1');
     });
-    expect(first.result.current.pending).toBeNull();
     await first.unmount();
 
     const second = await renderHook(() => useBornCeremony(lista));
@@ -71,9 +70,32 @@ describe('useBornCeremony', () => {
     );
     await waitFor(() => expect(result.current.pending?.id).toBe('a'));
     await act(async () => {
-      await result.current.dismiss();
+      await markCeremonySeen('a');
     });
     await rerender({ lista: [a, b] });
     await waitFor(() => expect(result.current.pending?.id).toBe('b'));
+  });
+
+  it('reavalia a parceria quando a lista muda no meio do getItem e celebra uma única vez', async () => {
+    let resolveFirst: (v: string | null) => void = () => {};
+    const getItem = AsyncStorage.getItem as jest.Mock;
+    getItem.mockClear();
+    getItem.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveFirst = resolve; }),
+    );
+    const p = partnership('p1', 1000);
+    const { result, rerender } = await renderHook(
+      (props: { lista: PartnershipDoc[] }) => useBornCeremony(props.lista),
+      { initialProps: { lista: [p] } },
+    );
+    await rerender({ lista: [p] }); // nova referência, mesma parceria, antes do getItem voltar
+    await flush();
+    expect(result.current.pending?.id).toBe('p1');
+    await act(async () => {
+      resolveFirst(null); // o efeito cancelado acorda tarde e não pode interferir
+    });
+    await flush();
+    expect(result.current.pending?.id).toBe('p1');
+    expect(getItem).toHaveBeenCalledTimes(2);
   });
 });
