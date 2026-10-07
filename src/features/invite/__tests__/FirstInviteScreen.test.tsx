@@ -97,3 +97,13 @@ it('enquanto gera, o botão fica com disabled nativo', async () => {
   await fireEvent.press(screen.getByLabelText('Gerar convite'));
   expect(mockCreateInvite).toHaveBeenCalledTimes(1);
 });
+
+it('falha do Share vira mensagem curta, sem rejeição solta', async () => {
+  (Share.share as jest.Mock).mockRejectedValue(new Error('no activity'));
+  mockCreateInvite.mockResolvedValue('K7QM2X9P');
+  await renderScreen();
+  await fireEvent.press(screen.getByText('Gerar convite'));
+  await waitFor(() => screen.getByText('Compartilhar no WhatsApp'));
+  await fireEvent.press(screen.getByText('Compartilhar no WhatsApp'));
+  expect(await screen.findByText('Não consegui abrir o compartilhamento. Tenta de novo.')).toBeTruthy();
+});

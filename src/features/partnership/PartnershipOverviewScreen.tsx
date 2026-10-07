@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/core/auth/useAuth';
 import { db } from '@/core/firebase/client';
@@ -10,7 +10,9 @@ import { ErrorState } from '@/core/ui/ErrorState';
 import { GlassCard } from '@/core/ui/GlassCard';
 import { theme } from '@/core/ui/theme';
 import { XParceriaBar } from '@/core/ui/XParceriaBar';
-import { createInvite, inviteUrl } from '@/features/invite/services/invites';
+import { useCreateInvite } from '@/features/invite/hooks/useCreateInvite';
+import { useShare } from '@/features/invite/hooks/useShare';
+import { resumeInviteMessage } from '@/features/invite/inviteShare';
 import { useProfile } from '@/features/profile/hooks/useProfile';
 import { bandForTemperature } from '@shared/temperature';
 import { usePartnership } from './hooks/usePartnership';
@@ -29,6 +31,8 @@ export function PartnershipOverviewScreen() {
   const profile = useProfile(uid);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const invite = useCreateInvite(uid, profile.data);
+  const sharing = useShare();
 
   if (q.isError) {
     return <ErrorState message={firestoreErrorMessage(q.error)} onRetry={() => void q.refetch()} />;
@@ -73,19 +77,25 @@ export function PartnershipOverviewScreen() {
     );
   }
 
+  // Criar (erro do Firestore, traduzido pelo hook) e compartilhar (falha do
+  // Share, mensagem própria) são passos separados: se só o Share falhou, o
+  // convite já existe e tentar de novo compartilha o mesmo, sem criar outro.
+  // Fora desse caso, cada toque gera um convite novo (o anterior pode ter
+  // sido usado).
   function sendNewInvite() {
-    const owner = profile.data;
-    if (owner == null) {
+    setError(null);
+    if (profile.data == null) {
       setError('Não consegui carregar seu perfil. Tenta de novo.');
       return;
     }
-    void run(async () => {
-      const code = await createInvite(db, owner.uid, owner);
-      await Share.share({
-        message: `Bora retomar nossa parceria? ${inviteUrl(code, owner.displayName)}`,
-      });
-    });
+    if (invite.url !== null && sharing.error !== null) {
+      void sharing.share(resumeInviteMessage(invite.url));
+      return;
+    }
+    invite.createThen((url) => void sharing.share(resumeInviteMessage(url)));
   }
+
+  const shownError = error ?? invite.error ?? sharing.error;
 
   return (
     <ScrollView contentContainerStyle={styles.content}>
@@ -109,14 +119,19 @@ export function PartnershipOverviewScreen() {
         {since !== null && <Text style={styles.since}>{`Parceria desde ${since}`}</Text>}
       </GlassCard>
 
-      {error !== null && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
+      {shownError !== null && <Text accessibilityRole="alert" style={styles.error}>{shownError}</Text>}
 
       {p.status === 'ended' ? (
         <View style={styles.actions}>
           <Text style={styles.body}>
             Essa parceria está encerrada. Um convite novo traz a parceria de volta, com todo o XParceria de vocês.
           </Text>
-          <Button label="Mandar convite novo" onPress={sendNewInvite} disabled={busy} loading={busy} />
+          <Button
+            label="Mandar convite novo"
+            onPress={sendNewInvite}
+            disabled={invite.isPending}
+            loading={invite.isPending}
+          />
         </View>
       ) : (
         <View style={styles.actions}>

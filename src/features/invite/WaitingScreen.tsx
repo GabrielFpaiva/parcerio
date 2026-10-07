@@ -7,7 +7,8 @@ import { theme } from '@/core/ui/theme';
 import { usePartnerships } from '@/features/partnership/hooks/usePartnerships';
 import { useProfile } from '@/features/profile/hooks/useProfile';
 import { useCreateInvite } from './hooks/useCreateInvite';
-import { formatInviteCode, shareInvite } from './inviteShare';
+import { useShare } from './hooks/useShare';
+import { formatInviteCode, inviteMessage } from './inviteShare';
 import { PartnershipPreview } from './PartnershipPreview';
 import { inviteUrl } from './services/invites';
 
@@ -19,6 +20,7 @@ export function WaitingScreen() {
   const profile = useProfile(uid);
   const partnerships = usePartnerships(uid);
   const regenerate = useCreateInvite(uid, profile.data);
+  const sharing = useShare();
 
   // O convite novo substitui o da rota: é o que passa a ser mostrado e compartilhado.
   const code = regenerate.code ?? params.code ?? null;
@@ -47,8 +49,9 @@ export function WaitingScreen() {
         </Text>
       )}
       {regenerate.error !== null && <Text style={styles.error}>{regenerate.error}</Text>}
+      {sharing.error !== null && <Text style={styles.error}>{sharing.error}</Text>}
       <View style={styles.actions}>
-        {url !== null && <Button label="Compartilhar de novo" onPress={() => void shareInvite(url)} />}
+        {url !== null && <Button label="Compartilhar de novo" onPress={() => void sharing.share(inviteMessage(url))} />}
         <Button
           label="Gerar outro convite"
           variant="glass"

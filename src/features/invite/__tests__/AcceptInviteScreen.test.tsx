@@ -176,6 +176,14 @@ describe('AcceptInviteScreen', () => {
     });
   });
 
+  it('falha do Share no pedido de convite novo vira mensagem curta, sem rejeição solta', async () => {
+    shareSpy.mockRejectedValue(new Error('no activity'));
+    mockRead.mockResolvedValue(invite({ usedBy: 'bia', status: 'accepted' }));
+    await renderScreen();
+    await fireEvent.press(await screen.findByLabelText('Pedir um convite novo'));
+    expect(await screen.findByText('Não consegui abrir o compartilhamento. Tenta de novo.')).toBeTruthy();
+  });
+
   it('pedido de convite expirado usa o texto de esfriou', async () => {
     mockRead.mockResolvedValue(invite({ createdAt: { toMillis: () => 0 } }));
     await renderScreen();

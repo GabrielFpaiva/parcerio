@@ -119,3 +119,10 @@ it('erro ao gerar outro convite mostra mensagem traduzida e mantém o código at
   await waitFor(() => expect(screen.getByText('Sem conexão. Tenta de novo.')).toBeTruthy());
   expect(screen.getByText('K7QM 2X9P')).toBeTruthy();
 });
+
+it('falha do Share vira mensagem curta, sem rejeição solta', async () => {
+  (Share.share as jest.Mock).mockRejectedValue(new Error('no activity'));
+  await renderScreen();
+  await fireEvent.press(screen.getByText('Compartilhar de novo'));
+  expect(await screen.findByText('Não consegui abrir o compartilhamento. Tenta de novo.')).toBeTruthy();
+});

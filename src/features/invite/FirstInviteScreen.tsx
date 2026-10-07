@@ -5,7 +5,8 @@ import { Button } from '@/core/ui/Button';
 import { theme } from '@/core/ui/theme';
 import { useProfile } from '@/features/profile/hooks/useProfile';
 import { useCreateInvite } from './hooks/useCreateInvite';
-import { formatInviteCode, shareInvite } from './inviteShare';
+import { useShare } from './hooks/useShare';
+import { formatInviteCode, inviteMessage } from './inviteShare';
 
 export function FirstInviteScreen() {
   const { user } = useAuth();
@@ -13,6 +14,7 @@ export function FirstInviteScreen() {
   const uid = user?.uid ?? null;
   const profile = useProfile(uid);
   const invite = useCreateInvite(uid, profile.data);
+  const sharing = useShare();
 
   if (invite.code === null || invite.url === null) {
     return (
@@ -40,7 +42,8 @@ export function FirstInviteScreen() {
       <Text accessibilityLabel={`Código ${code.split('').join(' ')}`} style={styles.code}>
         {formatInviteCode(code)}
       </Text>
-      <Button label="Compartilhar no WhatsApp" onPress={() => void shareInvite(url)} />
+      {sharing.error !== null && <Text style={styles.error}>{sharing.error}</Text>}
+      <Button label="Compartilhar no WhatsApp" onPress={() => void sharing.share(inviteMessage(url))} />
       <Button
         label="Já mandei"
         variant="ghost"

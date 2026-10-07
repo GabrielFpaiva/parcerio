@@ -1,5 +1,7 @@
 import { Alert, Share } from 'react-native';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react-native';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactElement } from 'react';
 import { PartnershipOverviewScreen } from '../PartnershipOverviewScreen';
 import type { PartnershipDoc } from '@shared/types';
 
@@ -33,6 +35,12 @@ jest.mock('@/features/invite/services/invites', () => ({
 jest.mock('expo-router', () => ({
   useLocalSearchParams: () => ({ id: 'p1' }),
 }));
+
+// O convite novo passa por useCreateInvite (React Query).
+function render(ui: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+  return rtlRender(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
 
 function partnership(status: PartnershipDoc['status'] = 'active'): PartnershipDoc {
   return {
@@ -213,4 +221,23 @@ it('dado inconsistente (sem o outro membro) mostra "Parceiro", não o próprio u
   await render(<PartnershipOverviewScreen />);
   expect(screen.getByText('Parceiro')).toBeTruthy();
   expect(screen.getAllByText('Alice')).toHaveLength(1);
+});
+
+it('falha do Share não vira erro do Firestore, e tentar de novo não cria outro convite', async () => {
+  ready('ended');
+  shareSpy.mockRejectedValueOnce(new Error('no activity'));
+  await render(<PartnershipOverviewScreen />);
+  await fireEvent.press(screen.getByText('Mandar convite novo'));
+  expect(await screen.findByText('Não consegui abrir o compartilhamento. Tenta de novo.')).toBeTruthy();
+  expect(screen.queryByText('Algo deu errado. Tenta de novo.')).toBeNull();
+
+  await fireEvent.press(screen.getByText('Mandar convite novo'));
+  await waitFor(() => expect(shareSpy).toHaveBeenCalledTimes(2));
+  expect(mockCreateInvite).toHaveBeenCalledTimes(1);
+  expect(shareSpy).toHaveBeenLastCalledWith({
+    message: 'Bora retomar nossa parceria? https://x.test/?c=ABC12345&de=Alice',
+  });
+  await waitFor(() =>
+    expect(screen.queryByText('Não consegui abrir o compartilhamento. Tenta de novo.')).toBeNull(),
+  );
 });

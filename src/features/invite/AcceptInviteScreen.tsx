@@ -1,4 +1,4 @@
-import { Share, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Avatar } from '@/core/ui/Avatar';
 import { Button } from '@/core/ui/Button';
@@ -9,6 +9,8 @@ import { useAuth } from '@/core/auth/useAuth';
 import { partnershipId } from '@shared/partnership';
 import { REJECTION_MESSAGES, canAskForNewInvite, useAcceptInvite } from './hooks/useAcceptInvite';
 import { useInvitePreview } from './hooks/useInvitePreview';
+import { useShare } from './hooks/useShare';
+import { newInviteRequestMessage } from './inviteShare';
 import type { AcceptRejection } from './services/invites';
 
 type Props = { code: string };
@@ -29,6 +31,7 @@ export function AcceptInviteScreen({ code }: Props) {
   const uid = user?.uid ?? null;
   const preview = useInvitePreview(code, uid);
   const { accept, isPending, rejection: acceptRejection, errorMessage } = useAcceptInvite(code, uid);
+  const sharing = useShare();
 
   if (preview.isLoading || uid === null) return <Skeleton />;
   if (preview.isError) {
@@ -70,9 +73,7 @@ export function AcceptInviteScreen({ code }: Props) {
   }
 
   function askForNewInvite(reason: 'used' | 'expired') {
-    const what = reason === 'used' ? 'já foi usado' : 'esfriou';
-    const greeting = inviterName !== null ? `${inviterName}, seu` : 'Seu';
-    void Share.share({ message: `${greeting} convite do Parcerio ${what} — me manda outro?` });
+    void sharing.share(newInviteRequestMessage(inviterName, reason));
   }
 
   // Já parceiros: quem reabre o link do convite que aceitou, ou o aceite
@@ -94,6 +95,7 @@ export function AcceptInviteScreen({ code }: Props) {
     return (
       <View style={styles.center}>
         <Text style={styles.title}>{REJECTION_MESSAGES[rejection]}</Text>
+        {sharing.error !== null && <Text style={styles.error}>{sharing.error}</Text>}
         {canAskForNewInvite(rejection) && (
           <Button label="Pedir um convite novo" onPress={() => askForNewInvite(rejection)} />
         )}
