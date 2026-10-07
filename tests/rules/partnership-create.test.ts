@@ -158,11 +158,15 @@ describe('nascimento — convite e parceria amarrados nos dois sentidos', () => 
 
   it('NEGA uma segunda parceria com o mesmo convite, por outra pessoa', async () => {
     // O furo de antes: Bob e depois Carol viravam parceiros da Alice com o
-    // mesmo código de uso único.
+    // mesmo código de uso único. A Carol faz o aceite COMPLETO (parceria +
+    // convite no mesmo commit): gravando só a parceria, quem negaria era
+    // inviteConsumedBy, e o teste repetiria o "sem consumir o convite". Aqui
+    // quem nega é o convite já usado — inviteIsOpen, nas duas regras.
     await assertSucceeds(bobAccepts());
     const carolPid = [ALICE, CAROL].sort().join('_');
-    const carol = env.authenticatedContext(CAROL).firestore();
-    await assertFails(carol.doc(`partnerships/${carolPid}`).set(validPartnership(ALICE, CAROL, CODE)));
+    await assertFails(
+      acceptAs(CAROL, `partnerships/${carolPid}`, validPartnership(ALICE, CAROL, CODE), CODE),
+    );
   });
 });
 
