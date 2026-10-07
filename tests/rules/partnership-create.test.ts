@@ -1,7 +1,7 @@
 import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import type { RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { Timestamp } from 'firebase/firestore';
-import { ALICE, BOB, CAROL, createTestEnv } from './helpers';
+import { ALICE, BOB, CAROL, createTestEnv, validProfile } from './helpers';
 import { seedInvite, seedPartnership, seedUsers, validInvite, validPartnership } from './factories';
 
 let env: RulesTestEnvironment;
@@ -207,6 +207,40 @@ describe('nascimento — memberProfiles é cópia de users/{uid}', () => {
   it('NEGA faltar o perfil de um membro', async () => {
     const profiles = realProfiles();
     await assertFails(bobAccepts({ memberProfiles: { [BOB]: profiles[BOB] } }));
+  });
+
+  // users.create usa hasOnly, não hasAll: um users doc sem photoURL ou
+  // avatarEmoji passa pela regra (createProfile sempre grava os dois, mas a
+  // regra não obriga). Chave ausente em users ⇒ ausente ou null no perfil,
+  // nunca um valor escolhido por quem aceita.
+  describe('quando users/{alice} não tem photoURL nem avatarEmoji', () => {
+    beforeEach(async () => {
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        const { photoURL: _p, avatarEmoji: _a, ...semFoto } = validProfile(ALICE, 'alice');
+        await ctx.firestore().doc(`users/${ALICE}`).set(semFoto);
+      });
+    });
+
+    const aliceProfile = (extra: Record<string, unknown>) => {
+      const profiles = realProfiles();
+      return { memberProfiles: { ...profiles, [ALICE]: { displayName: profiles[ALICE]!.displayName, ...extra } } };
+    };
+
+    it('PERMITE o perfil da Alice sem as chaves ausentes', async () => {
+      await assertSucceeds(bobAccepts(aliceProfile({})));
+    });
+
+    it('PERMITE as chaves ausentes gravadas como null', async () => {
+      await assertSucceeds(bobAccepts(aliceProfile({ photoURL: null, avatarEmoji: null })));
+    });
+
+    it('NEGA Bob preencher o avatarEmoji ausente com valor livre', async () => {
+      await assertFails(bobAccepts(aliceProfile({ avatarEmoji: '💩' })));
+    });
+
+    it('NEGA Bob preencher o photoURL ausente com valor livre', async () => {
+      await assertFails(bobAccepts(aliceProfile({ photoURL: 'https://evil.example/a.jpg' })));
+    });
   });
 });
 

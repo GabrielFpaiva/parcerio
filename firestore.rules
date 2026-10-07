@@ -133,11 +133,17 @@ service cloud.firestore {
     // UserDoc. Sem isto, quem aceita escreveria o nome e a foto do OUTRO como
     // quisesse. A fonte é users e não invite.fromProfile: se a Alice editou o
     // perfil depois de gerar o convite, fromProfile está velho.
+    //
+    // get(campo, null) nos dois lados: users.create usa hasOnly, não hasAll,
+    // então um users doc pode não ter photoURL/avatarEmoji. Chave ausente em
+    // users só casa com ausente ou null no perfil — nunca com valor livre.
+    // Com acesso direto (u.photoURL), a chave ausente dava erro e negava a
+    // parceria inteira dessa pessoa.
     function matchesUserProfile(p, uid) {
       let u = userDoc(uid);
-      return p.displayName == u.displayName
-          && p.photoURL == u.photoURL
-          && p.avatarEmoji == u.avatarEmoji
+      return p.get('displayName', null) == u.get('displayName', null)
+          && p.get('photoURL', null) == u.get('photoURL', null)
+          && p.get('avatarEmoji', null) == u.get('avatarEmoji', null)
           && p.keys().hasOnly(['displayName', 'photoURL', 'avatarEmoji']);
     }
 
