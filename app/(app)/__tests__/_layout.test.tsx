@@ -13,6 +13,7 @@ jest.mock('@/core/auth/useAuth', () => ({
 jest.mock('@/features/profile/hooks/useProfile', () => ({
   useProfile: () => mockUseProfile(),
 }));
+jest.mock('@/features/ceremony/BornCeremonyGate', () => ({ BornCeremonyGate: () => null }));
 jest.mock('expo-router', () => {
   const { Text } = require('react-native');
   return {

@@ -18,4 +18,20 @@ describe('XParceriaBar', () => {
     const bar = screen.getByLabelText('Progresso de XParceria');
     expect(bar.props.accessibilityValue).toEqual({ min: 0, max: 496, now: 420 });
   });
+
+  it('aceita preenchimento animado e esconde o texto sem mudar a semântica', async () => {
+    const { Animated } = require('react-native');
+    await render(
+      <XParceriaBar
+        level={1}
+        xpIntoLevel={100}
+        FillComponent={Animated.View}
+        fillStyle={{ transform: [{ scaleX: 0.5 }] }}
+        hideLabel
+      />,
+    );
+    expect(screen.queryByText(/XParceria$/)).toBeNull();
+    const bar = screen.getByLabelText('Progresso de XParceria');
+    expect(bar.props.accessibilityValue).toEqual({ min: 0, max: 122, now: 100 });
+  });
 });

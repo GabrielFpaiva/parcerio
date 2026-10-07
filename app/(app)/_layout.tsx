@@ -2,6 +2,7 @@ import { Redirect, Stack } from 'expo-router';
 import { ActivityIndicator, View } from 'react-native';
 import { useAuth } from '@/core/auth/useAuth';
 import { ErrorState } from '@/core/ui/ErrorState';
+import { BornCeremonyGate } from '@/features/ceremony/BornCeremonyGate';
 import { useProfile } from '@/features/profile/hooks/useProfile';
 
 // Guarda de sessão + guarda de perfil: sem perfil criado, não entra no app.
@@ -33,5 +34,10 @@ export default function AppLayout() {
   // estrito reintroduziria o bug de deixar `undefined` passar como "tem perfil".
   if (profile.data == null) return <Redirect href="/profile-setup" />;
 
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return (
+    <>
+      <Stack screenOptions={{ headerShown: false }} />
+      <BornCeremonyGate />
+    </>
+  );
 }
