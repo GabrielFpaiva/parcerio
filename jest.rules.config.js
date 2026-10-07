@@ -3,7 +3,7 @@
 module.exports = {
   displayName: 'rules',
   testEnvironment: 'node',
-  testMatch: ['<rootDir>/tests/rules/**/*.test.ts'],
+  testMatch: ['<rootDir>/tests/**/*.test.ts'],
   transform: { '^.+\\.tsx?$': ['babel-jest', { presets: ['babel-preset-expo'] }] },
   // Todos os arquivos de teste apontam para o mesmo projectId de emulador e
   // cada um chama clearFirestore() no beforeEach. Rodando em paralelo (padrão
