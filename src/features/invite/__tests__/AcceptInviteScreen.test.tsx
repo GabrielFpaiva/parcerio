@@ -104,6 +104,22 @@ describe('AcceptInviteScreen', () => {
     expect(await screen.findByText('Esse convite é seu.')).toBeTruthy();
   });
 
+  it('quem já aceitou e abre o link de novo vê a própria parceria', async () => {
+    mockRead.mockResolvedValue(invite({ usedBy: 'me', status: 'accepted' }));
+    await renderScreen();
+    expect(await screen.findByText('Vocês já são parceiros.')).toBeTruthy();
+    expect(screen.queryByLabelText('Pedir um convite novo')).toBeNull();
+    await fireEvent.press(screen.getByLabelText('Ver parceria'));
+    expect(mockReplace).toHaveBeenCalledWith('/partnership/ana_me');
+  });
+
+  it('usado por outra pessoa continua sem "Ver parceria"', async () => {
+    mockRead.mockResolvedValue(invite({ usedBy: 'bia', status: 'accepted' }));
+    await renderScreen();
+    expect(await screen.findByText('Esse convite já virou parceria de outra pessoa.')).toBeTruthy();
+    expect(screen.queryByLabelText('Ver parceria')).toBeNull();
+  });
+
   it('pede convite novo pelo Share, com o nome de quem convidou', async () => {
     mockRead.mockResolvedValue(invite({ usedBy: 'bia', status: 'accepted' }));
     await renderScreen();
@@ -148,6 +164,8 @@ describe('AcceptInviteScreen', () => {
     await waitFor(() =>
       expect(screen.getByLabelText('Aceitar').props.accessibilityState.disabled).toBe(true),
     );
+    // O Pressable nativo com `disabled` recusa ser responder; sem a prop, devolveria true.
+    expect(screen.getByLabelText('Aceitar').props.onStartShouldSetResponder()).toBe(false);
     await fireEvent.press(screen.getByLabelText('Aceitar'));
     expect(mockAccept).toHaveBeenCalledTimes(1);
   });

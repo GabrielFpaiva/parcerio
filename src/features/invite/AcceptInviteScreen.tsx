@@ -6,6 +6,7 @@ import { ErrorState } from '@/core/ui/ErrorState';
 import { firestoreErrorMessage } from '@/core/firebase/firestoreError';
 import { theme } from '@/core/ui/theme';
 import { useAuth } from '@/core/auth/useAuth';
+import { partnershipId } from '@shared/partnership';
 import { REJECTION_MESSAGES, canAskForNewInvite, useAcceptInvite } from './hooks/useAcceptInvite';
 import { useInvitePreview } from './hooks/useInvitePreview';
 import type { AcceptRejection } from './services/invites';
@@ -40,6 +41,8 @@ export function AcceptInviteScreen({ code }: Props) {
   const rejection: AcceptRejection | null =
     invite === null ? 'not-found' : (preview.data?.rejection ?? acceptRejection);
   const inviterName = invite?.fromProfile.displayName ?? null;
+  // Quem já aceitou e toca no link de novo: a parceria é dele, não "de outra pessoa".
+  const ownPartnership = invite !== null && invite.usedBy === uid && invite.fromUid !== uid;
 
   async function onAccept() {
     try {
@@ -54,6 +57,19 @@ export function AcceptInviteScreen({ code }: Props) {
     const what = reason === 'used' ? 'já foi usado' : 'esfriou';
     const greeting = inviterName !== null ? `${inviterName}, seu` : 'Seu';
     void Share.share({ message: `${greeting} convite do Parcerio ${what} — me manda outro?` });
+  }
+
+  if (ownPartnership) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.title}>{REJECTION_MESSAGES['already-partners']}</Text>
+        <Button
+          label="Ver parceria"
+          onPress={() => router.replace(`/partnership/${partnershipId(invite.fromUid, uid)}`)}
+        />
+        <Button label="Voltar" variant="ghost" onPress={() => router.back()} />
+      </View>
+    );
   }
 
   if (rejection !== null) {
