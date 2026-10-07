@@ -182,6 +182,32 @@ describe('reativação', () => {
     });
   });
 
+  it('recopia memberProfiles de users e mantém createdBy do nascimento', async () => {
+    const first = await aliceInvites();
+    await acceptInvite(dbOf(BOB), first, BOB);
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc(`partnerships/${PID}`).update({ status: 'ended' });
+      // Perfil mudou enquanto a parceria estava encerrada: a cópia velha não serve.
+      await ctx.firestore().doc(`users/${ALICE}`).update({ displayName: 'Alice Nova', avatarEmoji: '🐙' });
+    });
+
+    // Quem gera o convite novo é o Bob: createdBy continua sendo a Alice,
+    // que convidou no nascimento — a reativação não reescreve a origem.
+    const second = await createInvite(dbOf(BOB), BOB, profileOf(BOB));
+    await acceptInvite(dbOf(ALICE), second, ALICE);
+
+    const snap = await getDoc(doc(dbOf(BOB), 'partnerships', PID));
+    const { displayName, photoURL, avatarEmoji } = profileOf(BOB);
+    expect(snap.data()).toMatchObject({
+      createdBy: ALICE,
+      bornFromInvite: second,
+      memberProfiles: {
+        [ALICE]: { displayName: 'Alice Nova', photoURL: null, avatarEmoji: '🐙' },
+        [BOB]: { displayName, photoURL, avatarEmoji },
+      },
+    });
+  });
+
   it('grava partnership_resumed em vez de reconceder o nascimento', async () => {
     const first = await aliceInvites();
     await acceptInvite(dbOf(BOB), first, BOB);
