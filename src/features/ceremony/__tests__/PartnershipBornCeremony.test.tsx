@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
-import { AccessibilityInfo } from 'react-native';
+import { AccessibilityInfo, StyleSheet } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import type { PartnershipDoc } from '@shared/types';
 import { PartnershipBornCeremony } from '../PartnershipBornCeremony';
@@ -89,4 +90,17 @@ describe('PartnershipBornCeremony', () => {
       jest.useRealTimers();
     }
   });
+});
+
+it('o X e o "Continuar" ficam fora da Dynamic Island e do indicador de home', async () => {
+  const insets = { top: 59, bottom: 34, left: 0, right: 0 };
+  await render(
+    <SafeAreaProvider initialMetrics={{ insets, frame: { x: 0, y: 0, width: 393, height: 852 } }}>
+      <PartnershipBornCeremony partnership={partnership} onDismiss={jest.fn()} />
+    </SafeAreaProvider>,
+  );
+  const close = StyleSheet.flatten(screen.getByLabelText('Fechar').props.style);
+  expect(close.top).toBeGreaterThanOrEqual(59);
+  const footer = StyleSheet.flatten(screen.getByTestId('born-ceremony-footer').props.style);
+  expect(footer.paddingBottom).toBeGreaterThanOrEqual(34);
 });

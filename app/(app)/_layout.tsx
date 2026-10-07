@@ -1,5 +1,6 @@
 import { Redirect, Stack } from 'expo-router';
 import { ActivityIndicator, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/core/auth/useAuth';
 import { ErrorState } from '@/core/ui/ErrorState';
 import { BornCeremonyGate } from '@/features/ceremony/BornCeremonyGate';
@@ -9,6 +10,7 @@ import { useProfile } from '@/features/profile/hooks/useProfile';
 export default function AppLayout() {
   const { status, user } = useAuth();
   const profile = useProfile(user?.uid ?? null);
+  const insets = useSafeAreaInsets();
 
   if (status === 'loading' || (status === 'signedIn' && profile.isLoading)) {
     return (
@@ -36,7 +38,19 @@ export default function AppLayout() {
 
   return (
     <>
-      <Stack screenOptions={{ headerShown: false }} />
+      {/* Sem header, cada tela encostaria no notch e no indicador de home. A
+          área segura fica num lugar só, para todas as telas do app. */}
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: {
+            paddingTop: insets.top,
+            paddingBottom: insets.bottom,
+            paddingLeft: insets.left,
+            paddingRight: insets.right,
+          },
+        }}
+      />
       <BornCeremonyGate />
     </>
   );

@@ -9,6 +9,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -43,6 +44,9 @@ export function PartnershipBornCeremony({ partnership, onDismiss }: Props) {
   const [uidA, uidB] = partnership.members;
   const left = partnership.memberProfiles[uidA] ?? FALLBACK_PROFILE;
   const right = partnership.memberProfiles[uidB] ?? FALLBACK_PROFILE;
+  // Modal de tela cheia: o X e o "Continuar" desviam da Dynamic Island e do
+  // indicador de home.
+  const insets = useSafeAreaInsets();
 
   // 0 = escondido, 1 = assentado. Com movimento reduzido, tudo pula direto para 1.
   const approach = useSharedValue(0);
@@ -134,7 +138,7 @@ export function PartnershipBornCeremony({ partnership, onDismiss }: Props) {
         disabled={false}
         hitSlop={12}
         onPress={close}
-        style={styles.close}
+        style={[styles.close, { top: insets.top + theme.space[3]! }]}
       >
         <Text style={styles.closeGlyph}>✕</Text>
       </Pressable>
@@ -174,7 +178,10 @@ export function PartnershipBornCeremony({ partnership, onDismiss }: Props) {
         </Animated.View>
       </View>
 
-      <View style={styles.footer}>
+      <View
+        testID="born-ceremony-footer"
+        style={[styles.footer, { paddingBottom: insets.bottom + theme.space[5]! }]}
+      >
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Continuar"
@@ -193,7 +200,6 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.colors.paper[0] },
   close: {
     position: 'absolute',
-    top: theme.space[7],
     right: theme.space[4],
     zIndex: 2,
     width: 40,
