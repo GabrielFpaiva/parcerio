@@ -1,6 +1,6 @@
 import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import type { RulesTestEnvironment } from '@firebase/rules-unit-testing';
-import { Timestamp } from 'firebase/firestore';
+import { serverTimestamp, Timestamp } from 'firebase/firestore';
 import { ALICE, BOB, CAROL, createTestEnv, validProfile } from './helpers';
 import { seedInvite, seedPartnership, seedUsers, validInvite, validPartnership } from './factories';
 
@@ -19,17 +19,22 @@ beforeEach(async () => {
   await seedInvite(env, CODE, validInvite(ALICE));
 });
 
+/** O evento que a Task 7 grava em events/born na mesma transação. */
+const bornEvent = () => ({ type: 'partnership_born', occurredAt: serverTimestamp(), xpAwarded: 100 });
+
 /**
- * O aceite inteiro, como a Task 7 faz: cria a parceria e consome o convite no
- * mesmo commit. Desde o acoplamento nos dois sentidos, uma parceria escrita
- * sozinha é negada por inviteConsumedBy — então os testes de negação abaixo
- * precisam do par completo, senão passariam pelo motivo errado.
+ * O aceite inteiro, como a Task 7 faz: cria a parceria, consome o convite e
+ * grava events/born no mesmo commit. Desde o acoplamento nos dois sentidos,
+ * uma parceria escrita sem o convite (inviteConsumedBy) ou sem o evento
+ * (eventAfterIs, Task 4) é negada — então os testes de negação abaixo
+ * precisam do aceite completo, senão passariam pelo motivo errado.
  */
 function acceptAs(uid: string, path: string, data: Record<string, unknown>, code: string) {
   const db = env.authenticatedContext(uid).firestore();
   const batch = db.batch();
   batch.set(db.doc(path), data);
   batch.update(db.doc(`invites/${code}`), { usedBy: uid, status: 'accepted' });
+  batch.set(db.doc(`${path}/events/born`), bornEvent());
   return batch.commit();
 }
 
@@ -127,13 +132,18 @@ describe('nascimento — convite e parceria amarrados nos dois sentidos', () => 
       bob.runTransaction(async (tx) => {
         tx.set(bob.doc(`partnerships/${PID}`), validPartnership(ALICE, BOB, CODE));
         tx.update(bob.doc(`invites/${CODE}`), { usedBy: BOB, status: 'accepted' });
+        tx.set(bob.doc(`partnerships/${PID}/events/born`), bornEvent());
       }),
     );
   });
 
   it('NEGA criar a parceria sem consumir o convite no mesmo commit', async () => {
+    // Com o evento de nascimento, para que só a falta do convite negue.
     const bob = env.authenticatedContext(BOB).firestore();
-    await assertFails(bob.doc(`partnerships/${PID}`).set(validPartnership(ALICE, BOB, CODE)));
+    const batch = bob.batch();
+    batch.set(bob.doc(`partnerships/${PID}`), validPartnership(ALICE, BOB, CODE));
+    batch.set(bob.doc(`partnerships/${PID}/events/born`), bornEvent());
+    await assertFails(batch.commit());
   });
 
   it('NEGA consumir o convite sem a parceria nascer', async () => {

@@ -171,6 +171,119 @@ service cloud.firestore {
           && pid == members[0] + '_' + members[1];
     }
 
+    function otherMember(members) {
+      return members[0] == request.auth.uid ? members[1] : members[0];
+    }
+
+    function allowedTransition(from, to) {
+      return (from == 'active' && (to == 'paused' || to == 'ended'))
+          || (from == 'paused' && (to == 'active' || to == 'ended'));
+    }
+
+    function isLifecycleEvent(t) {
+      return t == 'partnership_born' || t == 'partnership_paused'
+          || t == 'partnership_resumed' || t == 'partnership_ended';
+    }
+
+    // Só chamada depois de isLifecycleEvent — sem sentinel, sem furo.
+    function lifecycleEventXp(t) {
+      return t == 'partnership_born' ? 100 : 0;
+    }
+
+    // getAfter enxerga o estado PÓS-transação: é o que permite gravar o
+    // evento de nascimento junto com a parceria que ainda está nascendo.
+    function isMemberAfter(pid) {
+      return isSignedIn() && request.auth.uid in
+        getAfter(/databases/$(database)/documents/partnerships/$(pid)).data.members;
+    }
+
+    // O evento que narra uma mudança de status. A validade da transição é
+    // da regra da parceria; aqui só importa que o evento conte o que ela fez.
+    function eventForTransition(from, to) {
+      return from == to ? null
+           : to == 'paused' ? 'partnership_paused'
+           : to == 'ended' ? 'partnership_ended'
+           : to == 'active' ? 'partnership_resumed'
+           : null;
+    }
+
+    // Evento ↔ parceria, sentido evento → parceria: o evento só existe se o
+    // MESMO commit fizer o que ele narra. Sem isto, qualquer membro gravava
+    // um partnership_born de 100 XP com id automático quantas vezes quisesse,
+    // ou um "encerrou" que não aconteceu. Nascimento: id fixo `born` e a
+    // parceria não existia antes. Reativação (ended → active): id = o código
+    // do convite novo, que é o doc que a parceria confere no outro sentido.
+    function eventMatchesWrite(pid, eventId, t) {
+      let path = /databases/$(database)/documents/partnerships/$(pid);
+      return t == 'partnership_born'
+        ? eventId == 'born' && !exists(path)
+        : exists(path)
+            && eventForTransition(get(path).data.status, getAfter(path).data.status) == t
+            && (get(path).data.status != 'ended' || eventId == getAfter(path).data.bornFromInvite);
+    }
+
+    // Evento ↔ parceria, sentido parceria → evento: o nascimento e a
+    // reativação conferem, no estado pós-commit, o evento que deixam na
+    // timeline. Pausar/retomar/encerrar não têm este sentido: o evento deles
+    // tem id automático e a parceria não tem como saber qual conferir.
+    function eventAfterIs(pid, eventId, t) {
+      return getAfter(/databases/$(database)/documents/partnerships/$(pid)/events/$(eventId))
+               .data.type == t;
+    }
+
+    // ---- partnerships: os três ramos de update -------------------------
+    // Disjuntos por affectedKeys().hasOnly(...). Misturá-los num ramo só é
+    // como se abre um buraco sem perceber.
+
+    function lifecycleUpdate() {
+      return isMember(resource.data)
+          && request.resource.data.diff(resource.data)
+               .affectedKeys().hasOnly(['status', 'updatedAt'])
+          && allowedTransition(resource.data.status, request.resource.data.status)
+          && request.resource.data.updatedAt == request.time;
+    }
+
+    // Reaceite sobre parceria `ended` (spec §2.3): mesmo documento, XParceria
+    // e aniversário intactos, temperatura volta a 50. Mesmas amarras do
+    // nascimento: convite aberto do outro membro (inviteAuthorizes), consumido
+    // por quem aceita no mesmo commit (inviteConsumedBy — sem isto o uso único
+    // voltava pelo update) e memberProfiles copiado de users.
+    function reactivationUpdate(pid) {
+      let after = request.resource.data;
+      return isMember(resource.data)
+          && resource.data.status == 'ended'
+          && after.diff(resource.data).affectedKeys().hasOnly(
+               ['status', 'temperature', 'temperatureBand', 'memberProfiles',
+                'bornFromInvite', 'updatedAt'])
+          && after.status == 'active'
+          && after.temperature == 50
+          && after.temperatureBand == 'mild'
+          && after.updatedAt == request.time
+          && inviteAuthorizes(after.bornFromInvite,
+                              otherMember(resource.data.members),
+                              request.auth.uid)
+          && inviteConsumedBy(after.bornFromInvite, request.auth.uid)
+          && memberProfilesMatchUsers(after.memberProfiles, resource.data.members)
+          && eventAfterIs(pid, after.bornFromInvite, 'partnership_resumed');
+    }
+
+    // Cada um propaga o próprio perfil (spec §2.5). O conteúdo é livre — o
+    // dono pode pôr o que quiser no próprio users doc também —, mas o formato
+    // é o de MemberProfile: sem o hasOnly, a entrada vira blob arbitrário, e
+    // sem a entrada existir, apagá-la passaria (o diff só afeta a própria
+    // chave). Igualdade, não hasOnly: hasOnly aceita o diff vazio, e um
+    // update só de updatedAt (active → active) passaria por este ramo.
+    function profileUpdate() {
+      return isMember(resource.data)
+          && request.resource.data.diff(resource.data)
+               .affectedKeys().hasOnly(['memberProfiles', 'updatedAt'])
+          && request.resource.data.memberProfiles.diff(resource.data.memberProfiles)
+               .affectedKeys() == [request.auth.uid].toSet()
+          && request.resource.data.memberProfiles[request.auth.uid].keys()
+               .hasOnly(['displayName', 'photoURL', 'avatarEmoji'])
+          && request.resource.data.updatedAt == request.time;
+    }
+
     function zeroStreak() {
       return { 'current': 0, 'longest': 0, 'lastDay': null, 'freezesLeft': 2 };
     }
@@ -280,6 +393,7 @@ service cloud.firestore {
                     && inviteConsumedBy(request.resource.data.bornFromInvite, request.auth.uid)
                     && memberProfilesMatchUsers(request.resource.data.memberProfiles,
                                                 request.resource.data.members)
+                    && eventAfterIs(pid, 'born', 'partnership_born')
                     && request.resource.data.status == 'active'
                     && request.resource.data.xparceria == 100
                     && request.resource.data.level == 1
@@ -300,7 +414,23 @@ service cloud.firestore {
                           'xpForNextLevel', 'temperature', 'temperatureBand', 'streak', 'stats',
                           'achievements', 'superPartnershipId', 'updatedAt']);
 
-      allow update, delete: if false;   // Task 4 abre o update
+      allow update: if lifecycleUpdate() || reactivationUpdate(pid) || profileUpdate();
+      allow delete: if false;   // encerrar é mudar status, nunca apagar
+
+      // Quando duas regras casam com o mesmo caminho, o acesso é concedido se
+      // QUALQUER uma permitir. Este bloco convive com o /{document=**} abaixo,
+      // que continua negando escrita em days, missions e insights.
+      match /events/{eventId} {
+        allow read:   if isMember(partnership(pid));
+        allow create: if isMemberAfter(pid)
+                      && isLifecycleEvent(request.resource.data.type)
+                      && request.resource.data.xpAwarded
+                           == lifecycleEventXp(request.resource.data.type)
+                      && request.resource.data.occurredAt == request.time
+                      && request.resource.data.keys().hasOnly(['type', 'occurredAt', 'xpAwarded'])
+                      && eventMatchesWrite(pid, eventId, request.resource.data.type);
+        allow update, delete: if false;
+      }
 
       match /{document=**} {
         allow read:  if isMember(partnership(pid));
