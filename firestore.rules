@@ -96,6 +96,95 @@ service cloud.firestore {
           && p.handle == u.handle;
     }
 
+    // Convite ainda utilizável: pendente, não usado e dentro dos 7 dias
+    // (INVITE_TTL_DAYS em shared/invite.ts). Um lugar só para as duas regras
+    // que dependem disso — o aceite em invites e o nascimento da parceria —
+    // não divergirem sobre o que é "convite válido".
+    function inviteIsOpen(inv) {
+      return inv.usedBy == null
+          && inv.status == 'pending'
+          && request.time < inv.createdAt + duration.value(7, 'd');
+    }
+
+    // O consentimento do outro lado: só existe parceria se quem convidou
+    // gerou um convite aberto, e quem aceita não é a mesma pessoa. get(), não
+    // getAfter(): o nascimento marca o convite como usado na mesma transação,
+    // e get() enxerga o estado anterior — ainda pendente.
+    function inviteAuthorizes(code, inviterUid, accepterUid) {
+      let inv = get(/databases/$(database)/documents/invites/$(code)).data;
+      return inv.fromUid == inviterUid
+          && inv.fromUid != accepterUid
+          && inviteIsOpen(inv);
+    }
+
+    // Convite ↔ parceria, nos DOIS sentidos (lição do furo rodada/voto):
+    // inviteConsumedBy é o lado da parceria — ela só nasce se o mesmo commit
+    // marcar o convite como usado por quem aceita. Sem isto, um convite de
+    // uso único gerava uma parceria por pessoa que tivesse o código (provado
+    // no emulador, Task 3). O outro sentido está em invites.update.
+    function inviteConsumedBy(code, accepterUid) {
+      let inv = getAfter(/databases/$(database)/documents/invites/$(code)).data;
+      return inv.usedBy == accepterUid
+          && inv.status == 'accepted';
+    }
+
+    // memberProfiles no nascimento é cópia de users/{uid} de cada membro —
+    // os três campos de MemberProfile (shared/types.ts), que existem em
+    // UserDoc. Sem isto, quem aceita escreveria o nome e a foto do OUTRO como
+    // quisesse. A fonte é users e não invite.fromProfile: se a Alice editou o
+    // perfil depois de gerar o convite, fromProfile está velho.
+    //
+    // get(campo, null) nos dois lados: users.create usa hasOnly, não hasAll,
+    // então um users doc pode não ter photoURL/avatarEmoji. Chave ausente em
+    // users só casa com ausente ou null no perfil — nunca com valor livre.
+    // Com acesso direto (u.photoURL), a chave ausente dava erro e negava a
+    // parceria inteira dessa pessoa.
+    function matchesUserProfile(p, uid) {
+      let u = userDoc(uid);
+      return p.get('displayName', null) == u.get('displayName', null)
+          && p.get('photoURL', null) == u.get('photoURL', null)
+          && p.get('avatarEmoji', null) == u.get('avatarEmoji', null)
+          && p.keys().hasOnly(['displayName', 'photoURL', 'avatarEmoji']);
+    }
+
+    function memberProfilesMatchUsers(profiles, members) {
+      return profiles.keys().hasOnly(members)
+          && matchesUserProfile(profiles[members[0]], members[0])
+          && matchesUserProfile(profiles[members[1]], members[1]);
+    }
+
+    // O id da parceria de um par, na mesma forma que pidMatches exige.
+    function pairId(a, b) {
+      return a < b ? a + '_' + b : b + '_' + a;
+    }
+
+    // members[0] < members[1] garante ordem E proíbe parceria consigo mesmo.
+    // A segunda parte é redundante: com members [x, x], createdBy e auth.uid
+    // seriam ambos x, e `createdBy != auth.uid` já nega. Trocar < por <= não
+    // deixa nenhum teste vermelho — é defesa em profundidade, não código morto.
+    function pidMatches(pid, members) {
+      return members.size() == 2
+          && members[0] < members[1]
+          && pid == members[0] + '_' + members[1];
+    }
+
+    function zeroStreak() {
+      return { 'current': 0, 'longest': 0, 'lastDay': null, 'freezesLeft': 2 };
+    }
+
+    function zeroPartnershipStats() {
+      return {
+        'encounterCount': 0,
+        'totalMinutesTogether': 0,
+        'lastEncounterAt': null,
+        'daysSinceLastEncounter': 0,
+        'firstEncounterAt': null,
+        'longestEncounterMinutes': 0,
+        'maxDistanceKm': 0,
+        'placesVisited': 0
+      };
+    }
+
     // ---- users ---------------------------------------------------------
     // Perfil é legível por qualquer autenticado (o mapa precisa de nome e
     // foto) — mas só get: list despejaria a coleção inteira (uid, handle,
@@ -167,10 +256,48 @@ service cloud.firestore {
     }
 
     // ---- partnerships --------------------------------------------------
-    // Toda progressão é escrita por Cloud Function (Spec 2+).
+    // Sem Cloud Functions: esta regra é o servidor.
     match /partnerships/{pid} {
       allow read: if isMember(resource.data);
-      allow create, update, delete: if false;
+
+      // Todo valor é literal. Sem servidor, esta regra É o servidor: é o que
+      // impede um número inventado de entrar no produto cuja moeda é o número.
+      // updatedAt e o hasOnly vão além do brief da Task 3: a spec (§3.2) põe
+      // updatedAt entre os literais, e um campo fora do shape de
+      // PartnershipDoc (shared/types.ts) seria um valor que o cliente escolheu.
+      allow create: if isSignedIn()
+                    && pidMatches(pid, request.resource.data.members)
+                    && request.resource.data.id == pid
+                    && request.auth.uid in request.resource.data.members
+                    && request.resource.data.createdBy in request.resource.data.members
+                    && request.resource.data.createdBy != request.auth.uid
+                    && inviteAuthorizes(request.resource.data.bornFromInvite,
+                                        request.resource.data.createdBy,
+                                        request.auth.uid)
+                    && inviteConsumedBy(request.resource.data.bornFromInvite, request.auth.uid)
+                    && memberProfilesMatchUsers(request.resource.data.memberProfiles,
+                                                request.resource.data.members)
+                    && request.resource.data.status == 'active'
+                    && request.resource.data.xparceria == 100
+                    && request.resource.data.level == 1
+                    && request.resource.data.xpIntoLevel == 100
+                    && request.resource.data.xpForNextLevel == 122
+                    && request.resource.data.temperature == 50
+                    && request.resource.data.temperatureBand == 'mild'
+                    && request.resource.data.achievements == ['o-comeco']
+                    && request.resource.data.superPartnershipId == null
+                    && request.resource.data.streak == zeroStreak()
+                    && request.resource.data.stats == zeroPartnershipStats()
+                    && request.resource.data.createdAt == request.time
+                    && request.resource.data.activatedAt == request.time
+                    && request.resource.data.updatedAt == request.time
+                    && request.resource.data.keys().hasOnly(
+                         ['id', 'members', 'memberProfiles', 'status', 'createdBy', 'bornFromInvite',
+                          'createdAt', 'activatedAt', 'xparceria', 'level', 'xpIntoLevel',
+                          'xpForNextLevel', 'temperature', 'temperatureBand', 'streak', 'stats',
+                          'achievements', 'superPartnershipId', 'updatedAt']);
+
+      allow update, delete: if false;   // Task 4 abre o update
 
       match /{document=**} {
         allow read:  if isMember(partnership(pid));
@@ -231,13 +358,22 @@ service cloud.firestore {
       // (Hole 3, revisão adversarial 2026-08-27), a regra nunca lia
       // createdAt e um convite de 100 dias ainda era aceito. Confirmado no
       // emulador que Timestamp + duration.value(n, 'd') funciona em regra.
+      // usedBy, status e vencimento moram em inviteIsOpen(), compartilhada com
+      // o nascimento da parceria.
+      //
+      // O getAfter da parceria é o segundo sentido do acoplamento (o primeiro
+      // é inviteConsumedBy): sem ele qualquer logado com o código queimava o
+      // convite sem parceria nenhuma nascer. Ele pede que, depois do commit, a
+      // parceria do par aponte para ESTE código — não que ela esteja sendo
+      // criada agora. Assim o mesmo ramo serve à reativação (Task 4), em que a
+      // parceria `ended` já existe e passa a apontar para o código novo.
       allow update: if isSignedIn()
-                    && resource.data.usedBy == null
-                    && resource.data.status == 'pending'
+                    && inviteIsOpen(resource.data)
                     && request.auth.uid != resource.data.fromUid
-                    && request.time < resource.data.createdAt + duration.value(7, 'd')
                     && request.resource.data.usedBy == request.auth.uid
                     && request.resource.data.status == 'accepted'
+                    && getAfter(/databases/$(database)/documents/partnerships/$(pairId(resource.data.fromUid, request.auth.uid)))
+                         .data.bornFromInvite == code
                     && request.resource.data.diff(resource.data)
                          .affectedKeys().hasOnly(['usedBy', 'status']);
 
