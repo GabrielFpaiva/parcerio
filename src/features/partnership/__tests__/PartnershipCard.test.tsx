@@ -60,3 +60,10 @@ it('chama onPress ao tocar no card', async () => {
   await fireEvent.press(screen.getByRole('button'));
   expect(onPress).toHaveBeenCalledTimes(1);
 });
+
+it('dado inconsistente (sem o outro membro) cai em "Parceiro", nunca no próprio usuário', async () => {
+  const broken = { ...base, members: ['a'] } as unknown as PartnershipDoc;
+  await render(<PartnershipCard partnership={broken} viewerUid="a" onPress={jest.fn()} />);
+  expect(screen.getByText('Parceiro')).toBeTruthy();
+  expect(screen.queryByText('Alice')).toBeNull();
+});

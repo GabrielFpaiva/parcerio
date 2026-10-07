@@ -19,8 +19,10 @@ const STATUS_LABEL: Partial<Record<PartnershipStatus, string>> = {
 };
 
 export function PartnershipCard({ partnership: p, viewerUid, onPress }: Props) {
-  const partnerUid = p.members.find((m) => m !== viewerUid) ?? viewerUid;
-  const partner = p.memberProfiles[partnerUid];
+  // Sem o outro membro (dado inconsistente), cai no fallback "Parceiro" — nunca
+  // mostra a própria pessoa como parceira dela mesma.
+  const partnerUid = p.members.find((m) => m !== viewerUid);
+  const partner = partnerUid === undefined ? undefined : p.memberProfiles[partnerUid];
   // O campo gravado é cache do servidor e pode divergir; a banda vem sempre da temperatura.
   const band = bandForTemperature(p.temperature);
   const statusLabel = STATUS_LABEL[p.status];

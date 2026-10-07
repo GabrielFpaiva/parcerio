@@ -43,8 +43,10 @@ export function PartnershipOverviewScreen() {
   const p = q.data;
   const pid = p.id;
   const mine = p.memberProfiles[uid];
-  const partnerUid = p.members.find((m) => m !== uid) ?? uid;
-  const partner = p.memberProfiles[partnerUid];
+  // Sem o outro membro (dado inconsistente), cai no fallback "Parceiro" — nunca
+  // mostra a própria pessoa como parceira dela mesma.
+  const partnerUid = p.members.find((m) => m !== uid);
+  const partner = partnerUid === undefined ? undefined : p.memberProfiles[partnerUid];
   const band = bandForTemperature(p.temperature);
   const since = formatSince(p.activatedAt);
 

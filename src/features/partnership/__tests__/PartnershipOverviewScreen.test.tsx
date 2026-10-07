@@ -205,3 +205,12 @@ it('erro de leitura mostra a mensagem traduzida e tenta de novo', async () => {
   await fireEvent.press(screen.getByText('Tentar de novo'));
   expect(mockRefetch).toHaveBeenCalledTimes(1);
 });
+
+it('dado inconsistente (sem o outro membro) mostra "Parceiro", não o próprio usuário duas vezes', async () => {
+  mockUsePartnership.mockReturnValue({
+    isLoading: false, isError: false, data: { ...partnership(), members: ['a'] }, refetch: mockRefetch,
+  });
+  await render(<PartnershipOverviewScreen />);
+  expect(screen.getByText('Parceiro')).toBeTruthy();
+  expect(screen.getAllByText('Alice')).toHaveLength(1);
+});
