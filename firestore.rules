@@ -128,6 +128,25 @@ service cloud.firestore {
           && inv.status == 'accepted';
     }
 
+    // memberProfiles no nascimento é cópia de users/{uid} de cada membro —
+    // os três campos de MemberProfile (shared/types.ts), que existem em
+    // UserDoc. Sem isto, quem aceita escreveria o nome e a foto do OUTRO como
+    // quisesse. A fonte é users e não invite.fromProfile: se a Alice editou o
+    // perfil depois de gerar o convite, fromProfile está velho.
+    function matchesUserProfile(p, uid) {
+      let u = userDoc(uid);
+      return p.displayName == u.displayName
+          && p.photoURL == u.photoURL
+          && p.avatarEmoji == u.avatarEmoji
+          && p.keys().hasOnly(['displayName', 'photoURL', 'avatarEmoji']);
+    }
+
+    function memberProfilesMatchUsers(profiles, members) {
+      return profiles.keys().hasOnly(members)
+          && matchesUserProfile(profiles[members[0]], members[0])
+          && matchesUserProfile(profiles[members[1]], members[1]);
+    }
+
     // O id da parceria de um par, na mesma forma que pidMatches exige.
     function pairId(a, b) {
       return a < b ? a + '_' + b : b + '_' + a;
@@ -250,6 +269,8 @@ service cloud.firestore {
                                         request.resource.data.createdBy,
                                         request.auth.uid)
                     && inviteConsumedBy(request.resource.data.bornFromInvite, request.auth.uid)
+                    && memberProfilesMatchUsers(request.resource.data.memberProfiles,
+                                                request.resource.data.members)
                     && request.resource.data.status == 'active'
                     && request.resource.data.xparceria == 100
                     && request.resource.data.level == 1

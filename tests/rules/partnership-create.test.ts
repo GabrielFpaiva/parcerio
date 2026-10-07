@@ -166,6 +166,46 @@ describe('nascimento — convite e parceria amarrados nos dois sentidos', () => 
   });
 });
 
+describe('nascimento — memberProfiles é cópia de users/{uid}', () => {
+  // ALICE < BOB, então members = [ALICE, BOB]: um teste para cada índice.
+  const realProfiles = () =>
+    validPartnership(ALICE, BOB, CODE).memberProfiles as Record<string, Record<string, unknown>>;
+  const withProfile = (uid: string, patch: Record<string, unknown>) => {
+    const profiles = realProfiles();
+    return { memberProfiles: { ...profiles, [uid]: { ...profiles[uid], ...patch } } };
+  };
+
+  it('NEGA Bob forjar o displayName da Alice', async () => {
+    await assertFails(bobAccepts(withProfile(ALICE, { displayName: 'Alice, a chata' })));
+  });
+
+  it('NEGA Bob forjar o photoURL da Alice', async () => {
+    await assertFails(bobAccepts(withProfile(ALICE, { photoURL: 'https://evil.example/a.jpg' })));
+  });
+
+  it('NEGA Bob forjar o avatarEmoji da Alice', async () => {
+    await assertFails(bobAccepts(withProfile(ALICE, { avatarEmoji: '💩' })));
+  });
+
+  it('NEGA Bob gravar o próprio perfil diferente de users/{bob}', async () => {
+    await assertFails(bobAccepts(withProfile(BOB, { displayName: 'Bob Verificado' })));
+  });
+
+  it('NEGA campo extra dentro de um perfil', async () => {
+    await assertFails(bobAccepts(withProfile(ALICE, { handle: 'alice' })));
+  });
+
+  it('NEGA perfil de alguém que não é membro', async () => {
+    const profiles = realProfiles();
+    await assertFails(bobAccepts({ memberProfiles: { ...profiles, [CAROL]: profiles[ALICE] } }));
+  });
+
+  it('NEGA faltar o perfil de um membro', async () => {
+    const profiles = realProfiles();
+    await assertFails(bobAccepts({ memberProfiles: { [BOB]: profiles[BOB] } }));
+  });
+});
+
 describe('nascimento — integridade do id', () => {
   it('NEGA id que não corresponde aos membros ordenados', async () => {
     const data = validPartnership(ALICE, BOB, CODE, { id: 'id-inventado' });
