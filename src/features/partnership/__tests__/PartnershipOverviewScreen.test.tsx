@@ -179,16 +179,21 @@ it('erro na ação mostra a mensagem traduzida e mantém o botão utilizável', 
   await waitFor(() => expect(mockPause).toHaveBeenCalledTimes(2));
 });
 
+// Só o `disabled` nativo do Pressable faz o responder recusar o toque;
+// accessibilityState é preenchido à parte e não prova isso.
+const respondsToTouch = (name: string) =>
+  screen.getByRole('button', { name }).props.onStartShouldSetResponder() as boolean;
+
 it('desabilita os botões enquanto a mutação está em voo', async () => {
   let release!: () => void;
   mockPause.mockReturnValue(new Promise<void>((r) => { release = r; }));
   await render(<PartnershipOverviewScreen />);
+  expect(respondsToTouch('Encerrar')).toBe(true);
   await fireEvent.press(screen.getByText('Pausar'));
-  await waitFor(() =>
-    expect(screen.getByRole('button', { name: 'Encerrar' }).props.accessibilityState.disabled).toBe(true));
+  await waitFor(() => expect(respondsToTouch('Encerrar')).toBe(false));
+  expect(respondsToTouch('Pausar')).toBe(false);
   release();
-  await waitFor(() =>
-    expect(screen.getByRole('button', { name: 'Encerrar' }).props.accessibilityState.disabled).toBe(false));
+  await waitFor(() => expect(respondsToTouch('Encerrar')).toBe(true));
 });
 
 it('erro de leitura mostra a mensagem traduzida e tenta de novo', async () => {
