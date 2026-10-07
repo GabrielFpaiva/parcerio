@@ -1,9 +1,3 @@
-import { Text, View } from 'react-native';
+import { PartnershipListScreen } from '@/features/partnership/PartnershipListScreen';
 
-export default function MapPlaceholder() {
-  return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-      <Text>Parcerio</Text>
-    </View>
-  );
-}
+export default PartnershipListScreen;
