@@ -268,8 +268,6 @@ describe('reativação — ataques combinados com um nascimento legítimo', () =
   // Nos dois ataques abaixo, o convite é aceito de verdade (nasce a parceria
   // de quem o usa), e o lado do convite fica satisfeito com ela. Só as
   // guardas da parceria reativada no mesmo commit impedem o abuso.
-  const CB = [CAROL, BOB].sort().join('_');
-  const AC = [ALICE, CAROL].sort().join('_');
   const bornEvent = () => ({ type: 'partnership_born', occurredAt: serverTimestamp(), xpAwarded: 100 });
   const resumedEvent = () => ({ type: 'partnership_resumed', occurredAt: serverTimestamp(), xpAwarded: 0 });
   const reativaAB = (code: string) => ({
