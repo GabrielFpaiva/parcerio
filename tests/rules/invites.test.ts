@@ -2,7 +2,7 @@ import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import type { RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { Timestamp } from 'firebase/firestore';
 import { ALICE, BOB, CAROL, createTestEnv } from './helpers';
-import { seedInvite, seedUsers, validInvite } from './factories';
+import { seedInvite, seedPartnership, seedUsers, validInvite, validPartnership } from './factories';
 
 let env: RulesTestEnvironment;
 
@@ -134,28 +134,50 @@ describe('invites — read', () => {
 describe('invites — update', () => {
   beforeEach(() => seedInvite(env, 'AB3D4F7H', validInvite(ALICE)));
 
+  // O update exige (getAfter) que a parceria do par aponte para o código —
+  // o segundo sentido do acoplamento, provado em partnership-create.test.ts.
+  // Aqui ela é semeada por fora para cada teste isolar a guarda do convite,
+  // em vez de todos negarem por falta de parceria.
+  const pairOf = (a: string, b: string) => [a, b].sort().join('_');
+  const partnershipFor = (code: string, a = ALICE, b = BOB) =>
+    seedPartnership(env, pairOf(a, b), {
+      ...validPartnership(ALICE, BOB, code),
+      id: pairOf(a, b),
+      members: [a, b].sort(),
+      createdAt: new Date(),
+      activatedAt: new Date(),
+      updatedAt: new Date(),
+    });
+
   it('PERMITE que o convidado marque como usado', async () => {
+    await partnershipFor('AB3D4F7H');
     const bob = env.authenticatedContext(BOB).firestore();
     await assertSucceeds(bob.doc('invites/AB3D4F7H').update({ usedBy: BOB, status: 'accepted' }));
   });
 
   it('NEGA marcar como usado em nome de outra pessoa', async () => {
+    await partnershipFor('AB3D4F7H');
     const bob = env.authenticatedContext(BOB).firestore();
     await assertFails(bob.doc('invites/AB3D4F7H').update({ usedBy: CAROL, status: 'accepted' }));
   });
 
   it('NEGA que anônimo marque um convite como usado', async () => {
+    await partnershipFor('AB3D4F7H');
     const anon = env.unauthenticatedContext().firestore();
     await assertFails(anon.doc('invites/AB3D4F7H').update({ usedBy: BOB, status: 'accepted' }));
   });
 
   it('NEGA que o dono aceite o próprio convite', async () => {
+    // pairId(ALICE, ALICE): sem este documento o teste negaria por falta de
+    // parceria, não por `auth.uid != fromUid`.
+    await partnershipFor('AB3D4F7H', ALICE, ALICE);
     const alice = env.authenticatedContext(ALICE).firestore();
     await assertFails(alice.doc('invites/AB3D4F7H').update({ usedBy: ALICE, status: 'accepted' }));
   });
 
   it('NEGA reusar convite já aceito', async () => {
     await seedInvite(env, 'USED1234', validInvite(ALICE, { usedBy: CAROL, status: 'accepted' }));
+    await partnershipFor('USED1234');
     const bob = env.authenticatedContext(BOB).firestore();
     await assertFails(bob.doc('invites/USED1234').update({ usedBy: BOB, status: 'accepted' }));
   });
@@ -165,6 +187,7 @@ describe('invites — update', () => {
     // migração futura. A guarda `usedBy == null` é o que o barra — sem este
     // teste ela é uma linha que alguém remove sem consequência.
     await seedInvite(env, 'INCONS01', validInvite(ALICE, { usedBy: CAROL }));
+    await partnershipFor('INCONS01');
     const bob = env.authenticatedContext(BOB).firestore();
     await assertFails(bob.doc('invites/INCONS01').update({ usedBy: BOB, status: 'accepted' }));
   });
@@ -175,11 +198,13 @@ describe('invites — update', () => {
     // que nenhum teste exerce — um teste que vira os dois campos de uma vez
     // prova que um deles importa, nunca qual.
     await seedInvite(env, 'INCONS02', validInvite(ALICE, { status: 'accepted' }));
+    await partnershipFor('INCONS02');
     const bob = env.authenticatedContext(BOB).firestore();
     await assertFails(bob.doc('invites/INCONS02').update({ usedBy: BOB, status: 'accepted' }));
   });
 
   it('NEGA mexer em qualquer campo além de usedBy e status', async () => {
+    await partnershipFor('AB3D4F7H');
     const bob = env.authenticatedContext(BOB).firestore();
     await assertFails(
       bob.doc('invites/AB3D4F7H').update({ usedBy: BOB, status: 'accepted', fromUid: BOB }),
@@ -193,6 +218,7 @@ describe('invites — update', () => {
   it('NEGA aceitar convite vencido (createdAt com mais de 7 dias)', async () => {
     const vencido = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
     await seedInvite(env, 'OLD00001', validInvite(ALICE, { createdAt: vencido }));
+    await partnershipFor('OLD00001');
     const bob = env.authenticatedContext(BOB).firestore();
     await assertFails(bob.doc('invites/OLD00001').update({ usedBy: BOB, status: 'accepted' }));
   });
@@ -200,6 +226,7 @@ describe('invites — update', () => {
   it('PERMITE aceitar convite dentro do prazo (createdAt há 6 dias)', async () => {
     const dentroDoPrazo = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000);
     await seedInvite(env, 'NEW00001', validInvite(ALICE, { createdAt: dentroDoPrazo }));
+    await partnershipFor('NEW00001');
     const bob = env.authenticatedContext(BOB).firestore();
     await assertSucceeds(bob.doc('invites/NEW00001').update({ usedBy: BOB, status: 'accepted' }));
   });

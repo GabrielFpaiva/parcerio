@@ -2,7 +2,7 @@ import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import type { RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { Timestamp } from 'firebase/firestore';
 import { ALICE, BOB, CAROL, createTestEnv } from './helpers';
-import { seedInvite, seedUsers, validInvite, validPartnership } from './factories';
+import { seedInvite, seedPartnership, seedUsers, validInvite, validPartnership } from './factories';
 
 let env: RulesTestEnvironment;
 
@@ -19,10 +19,24 @@ beforeEach(async () => {
   await seedInvite(env, CODE, validInvite(ALICE));
 });
 
+/**
+ * O aceite inteiro, como a Task 7 faz: cria a parceria e consome o convite no
+ * mesmo commit. Desde o acoplamento nos dois sentidos, uma parceria escrita
+ * sozinha é negada por inviteConsumedBy — então os testes de negação abaixo
+ * precisam do par completo, senão passariam pelo motivo errado.
+ */
+function acceptAs(uid: string, path: string, data: Record<string, unknown>, code: string) {
+  const db = env.authenticatedContext(uid).firestore();
+  const batch = db.batch();
+  batch.set(db.doc(path), data);
+  batch.update(db.doc(`invites/${code}`), { usedBy: uid, status: 'accepted' });
+  return batch.commit();
+}
+
 /** Bob aceitando o convite da Alice, com um campo trocado. */
 function bobAccepts(overrides: Record<string, unknown> = {}) {
-  const bob = env.authenticatedContext(BOB).firestore();
-  return bob.doc(`partnerships/${PID}`).set(validPartnership(ALICE, BOB, CODE, overrides));
+  const data = validPartnership(ALICE, BOB, CODE, overrides);
+  return acceptAs(BOB, `partnerships/${PID}`, data, data.bornFromInvite as string);
 }
 
 describe('nascimento — o caminho que deve funcionar', () => {
@@ -33,7 +47,10 @@ describe('nascimento — o caminho que deve funcionar', () => {
 
 describe('nascimento — consentimento', () => {
   it('NEGA criar parceria sem apontar para convite nenhum', async () => {
-    await assertFails(bobAccepts({ bornFromInvite: 'NAOEXISTE' }));
+    // Consome o convite real (CODE): atualizar um convite inexistente daria
+    // NOT_FOUND, não PERMISSION_DENIED.
+    const data = validPartnership(ALICE, BOB, CODE, { bornFromInvite: 'NAOEXISTE' });
+    await assertFails(acceptAs(BOB, `partnerships/${PID}`, data, CODE));
   });
 
   it('NEGA usar convite de terceiro para virar parceiro de quem não convidou', async () => {
@@ -75,10 +92,8 @@ describe('nascimento — consentimento', () => {
   });
 
   it('NEGA que o dono do convite crie a parceria sozinho', async () => {
-    const alice = env.authenticatedContext(ALICE).firestore();
-    await assertFails(
-      alice.doc(`partnerships/${PID}`).set(validPartnership(ALICE, BOB, CODE, { createdBy: BOB })),
-    );
+    const data = validPartnership(ALICE, BOB, CODE, { createdBy: BOB });
+    await assertFails(acceptAs(ALICE, `partnerships/${PID}`, data, CODE));
   });
 
   it('NEGA que o dono do convite se declare createdBy e aceite o próprio convite', async () => {
@@ -87,34 +102,74 @@ describe('nascimento — consentimento', () => {
     // redundantes: `createdBy != auth.uid` (create) e `inv.fromUid !=
     // accepterUid` (inviteAuthorizes). Cada uma sozinha basta — este teste só
     // fica vermelho se as duas caírem juntas.
-    const alice = env.authenticatedContext(ALICE).firestore();
-    await assertFails(alice.doc(`partnerships/${PID}`).set(validPartnership(ALICE, BOB, CODE)));
+    await assertFails(acceptAs(ALICE, `partnerships/${PID}`, validPartnership(ALICE, BOB, CODE), CODE));
   });
 
   it('NEGA criar parceria entre duas outras pessoas', async () => {
-    const carol = env.authenticatedContext(CAROL).firestore();
-    await assertFails(carol.doc(`partnerships/${PID}`).set(validPartnership(ALICE, BOB, CODE)));
+    await assertFails(acceptAs(CAROL, `partnerships/${PID}`, validPartnership(ALICE, BOB, CODE), CODE));
   });
 
   it('NEGA parceria consigo mesmo', async () => {
+    const data = {
+      ...validPartnership(ALICE, BOB, CODE),
+      id: `${BOB}_${BOB}`,
+      members: [BOB, BOB],
+      createdBy: BOB,
+    };
+    await assertFails(acceptAs(BOB, `partnerships/${BOB}_${BOB}`, data, CODE));
+  });
+});
+
+describe('nascimento — convite e parceria amarrados nos dois sentidos', () => {
+  it('PERMITE o par completo numa transação', async () => {
     const bob = env.authenticatedContext(BOB).firestore();
-    await assertFails(
-      bob.doc(`partnerships/${BOB}_${BOB}`).set({
-        ...validPartnership(ALICE, BOB, CODE),
-        id: `${BOB}_${BOB}`,
-        members: [BOB, BOB],
-        createdBy: BOB,
+    await assertSucceeds(
+      bob.runTransaction(async (tx) => {
+        tx.set(bob.doc(`partnerships/${PID}`), validPartnership(ALICE, BOB, CODE));
+        tx.update(bob.doc(`invites/${CODE}`), { usedBy: BOB, status: 'accepted' });
       }),
     );
+  });
+
+  it('NEGA criar a parceria sem consumir o convite no mesmo commit', async () => {
+    const bob = env.authenticatedContext(BOB).firestore();
+    await assertFails(bob.doc(`partnerships/${PID}`).set(validPartnership(ALICE, BOB, CODE)));
+  });
+
+  it('NEGA consumir o convite sem a parceria nascer', async () => {
+    const bob = env.authenticatedContext(BOB).firestore();
+    await assertFails(bob.doc(`invites/${CODE}`).update({ usedBy: BOB, status: 'accepted' }));
+  });
+
+  it('NEGA consumir o convite quando a parceria do par aponta para outro código', async () => {
+    // A parceria existe (ex.: `ended`, à espera da reativação da Task 4), mas
+    // ninguém a está fazendo apontar para este convite. Prova que o lado do
+    // convite confere bornFromInvite, não só a existência da parceria.
+    await seedPartnership(env, PID, {
+      ...validPartnership(ALICE, BOB, 'ANTIGO01'),
+      status: 'ended',
+      createdAt: new Date(),
+      activatedAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const bob = env.authenticatedContext(BOB).firestore();
+    await assertFails(bob.doc(`invites/${CODE}`).update({ usedBy: BOB, status: 'accepted' }));
+  });
+
+  it('NEGA uma segunda parceria com o mesmo convite, por outra pessoa', async () => {
+    // O furo de antes: Bob e depois Carol viravam parceiros da Alice com o
+    // mesmo código de uso único.
+    await assertSucceeds(bobAccepts());
+    const carolPid = [ALICE, CAROL].sort().join('_');
+    const carol = env.authenticatedContext(CAROL).firestore();
+    await assertFails(carol.doc(`partnerships/${carolPid}`).set(validPartnership(ALICE, CAROL, CODE)));
   });
 });
 
 describe('nascimento — integridade do id', () => {
   it('NEGA id que não corresponde aos membros ordenados', async () => {
-    const bob = env.authenticatedContext(BOB).firestore();
-    await assertFails(
-      bob.doc('partnerships/id-inventado').set(validPartnership(ALICE, BOB, CODE, { id: 'id-inventado' })),
-    );
+    const data = validPartnership(ALICE, BOB, CODE, { id: 'id-inventado' });
+    await assertFails(acceptAs(BOB, 'partnerships/id-inventado', data, CODE));
   });
 
   it('NEGA campo id diferente do id do documento', async () => {
@@ -134,12 +189,8 @@ describe('nascimento — integridade do id', () => {
     // `members[0] < members[1]` impede o segundo documento do mesmo par.
     const reversed = [ALICE, BOB].sort().reverse();
     const reversedId = reversed.join('_');
-    const bob = env.authenticatedContext(BOB).firestore();
-    await assertFails(
-      bob.doc(`partnerships/${reversedId}`).set(
-        validPartnership(ALICE, BOB, CODE, { id: reversedId, members: reversed }),
-      ),
-    );
+    const data = validPartnership(ALICE, BOB, CODE, { id: reversedId, members: reversed });
+    await assertFails(acceptAs(BOB, `partnerships/${reversedId}`, data, CODE));
   });
 
   it('NEGA members com três pessoas', async () => {

@@ -110,15 +110,27 @@ service cloud.firestore {
     // gerou um convite aberto, e quem aceita não é a mesma pessoa. get(), não
     // getAfter(): o nascimento marca o convite como usado na mesma transação,
     // e get() enxerga o estado anterior — ainda pendente.
-    // ATENÇÃO: o acoplamento só vale num sentido. Nada aqui EXIGE que o
-    // convite seja consumido junto com a parceria; sem isso, um convite de
-    // uso único gera uma parceria por pessoa que tiver o código (provado no
-    // emulador na Task 3, decisão em aberto no relatório dela).
     function inviteAuthorizes(code, inviterUid, accepterUid) {
       let inv = get(/databases/$(database)/documents/invites/$(code)).data;
       return inv.fromUid == inviterUid
           && inv.fromUid != accepterUid
           && inviteIsOpen(inv);
+    }
+
+    // Convite ↔ parceria, nos DOIS sentidos (lição do furo rodada/voto):
+    // inviteConsumedBy é o lado da parceria — ela só nasce se o mesmo commit
+    // marcar o convite como usado por quem aceita. Sem isto, um convite de
+    // uso único gerava uma parceria por pessoa que tivesse o código (provado
+    // no emulador, Task 3). O outro sentido está em invites.update.
+    function inviteConsumedBy(code, accepterUid) {
+      let inv = getAfter(/databases/$(database)/documents/invites/$(code)).data;
+      return inv.usedBy == accepterUid
+          && inv.status == 'accepted';
+    }
+
+    // O id da parceria de um par, na mesma forma que pidMatches exige.
+    function pairId(a, b) {
+      return a < b ? a + '_' + b : b + '_' + a;
     }
 
     // members[0] < members[1] garante ordem E proíbe parceria consigo mesmo.
@@ -237,6 +249,7 @@ service cloud.firestore {
                     && inviteAuthorizes(request.resource.data.bornFromInvite,
                                         request.resource.data.createdBy,
                                         request.auth.uid)
+                    && inviteConsumedBy(request.resource.data.bornFromInvite, request.auth.uid)
                     && request.resource.data.status == 'active'
                     && request.resource.data.xparceria == 100
                     && request.resource.data.level == 1
@@ -320,11 +333,20 @@ service cloud.firestore {
       // emulador que Timestamp + duration.value(n, 'd') funciona em regra.
       // usedBy, status e vencimento moram em inviteIsOpen(), compartilhada com
       // o nascimento da parceria.
+      //
+      // O getAfter da parceria é o segundo sentido do acoplamento (o primeiro
+      // é inviteConsumedBy): sem ele qualquer logado com o código queimava o
+      // convite sem parceria nenhuma nascer. Ele pede que, depois do commit, a
+      // parceria do par aponte para ESTE código — não que ela esteja sendo
+      // criada agora. Assim o mesmo ramo serve à reativação (Task 4), em que a
+      // parceria `ended` já existe e passa a apontar para o código novo.
       allow update: if isSignedIn()
                     && inviteIsOpen(resource.data)
                     && request.auth.uid != resource.data.fromUid
                     && request.resource.data.usedBy == request.auth.uid
                     && request.resource.data.status == 'accepted'
+                    && getAfter(/databases/$(database)/documents/partnerships/$(pairId(resource.data.fromUid, request.auth.uid)))
+                         .data.bornFromInvite == code
                     && request.resource.data.diff(resource.data)
                          .affectedKeys().hasOnly(['usedBy', 'status']);
 
