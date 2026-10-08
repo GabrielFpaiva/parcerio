@@ -88,6 +88,22 @@ export async function seedInvite(
   });
 }
 
+/**
+ * Parceria já existente, semeada por fora das regras. Serve para testar
+ * invites.update isolado: o lado do convite exige (getAfter) que a parceria
+ * do par aponte para o código, e sem ela todo teste de negação do convite
+ * passaria pelo motivo errado.
+ */
+export async function seedPartnership(
+  env: RulesTestEnvironment,
+  pid: string,
+  data: Record<string, unknown>,
+) {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().doc(`partnerships/${pid}`).set(data);
+  });
+}
+
 export function validSuperPartnership(members: string[], overrides: Record<string, unknown> = {}) {
   const sorted = [...members].sort();
   return {

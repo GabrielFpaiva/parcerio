@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppLayout from '../_layout';
 
 // Prefixo `mock` é obrigatório: babel-plugin-jest-hoist bloqueia qualquer
@@ -6,6 +7,7 @@ import AppLayout from '../_layout';
 const mockUseAuth = jest.fn();
 const mockUseProfile = jest.fn();
 const mockRefetch = jest.fn();
+const mockStackProps = jest.fn();
 
 jest.mock('@/core/auth/useAuth', () => ({
   useAuth: () => mockUseAuth(),
@@ -13,11 +15,15 @@ jest.mock('@/core/auth/useAuth', () => ({
 jest.mock('@/features/profile/hooks/useProfile', () => ({
   useProfile: () => mockUseProfile(),
 }));
+jest.mock('@/features/ceremony/BornCeremonyGate', () => ({ BornCeremonyGate: () => null }));
 jest.mock('expo-router', () => {
   const { Text } = require('react-native');
   return {
     Redirect: ({ href }: { href: string }) => <Text>{`redirect:${href}`}</Text>,
-    Stack: () => <Text>app-stack</Text>,
+    Stack: (props: unknown) => {
+      mockStackProps(props);
+      return <Text>app-stack</Text>;
+    },
   };
 });
 
@@ -68,5 +74,22 @@ describe('AppLayout', () => {
     });
     await render(<AppLayout />);
     expect(screen.getByText('app-stack')).toBeTruthy();
+  });
+});
+
+it('as telas do app respeitam a área segura (notch, Dynamic Island, indicador de home)', async () => {
+  mockUseAuth.mockReturnValue({ status: 'signedIn', user: { uid: 'alice' } });
+  mockUseProfile.mockReturnValue({
+    isLoading: false, isError: false, data: { uid: 'alice', handle: 'alice' }, refetch: mockRefetch,
+  });
+  const insets = { top: 59, bottom: 34, left: 0, right: 0 };
+  await render(
+    <SafeAreaProvider initialMetrics={{ insets, frame: { x: 0, y: 0, width: 393, height: 852 } }}>
+      <AppLayout />
+    </SafeAreaProvider>,
+  );
+  const { screenOptions } = mockStackProps.mock.calls.at(-1)![0];
+  expect(screenOptions.contentStyle).toMatchObject({
+    paddingTop: 59, paddingBottom: 34, paddingLeft: 0, paddingRight: 0,
   });
 });
