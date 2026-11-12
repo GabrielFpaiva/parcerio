@@ -126,7 +126,7 @@ export interface InviteFromProfile extends MemberProfile {
  * Sem `expiresAt`: o cliente não consegue prever `request.time`, então um
  * campo de vencimento gravado seria impossível de fixar por regra — e um
  * convite que nunca expira é o abuso óbvio. O vencimento é derivado de
- * `createdAt + INVITE_TTL_MS`, no cliente e na regra.
+ * `createdAt + INVITE_TTL_MS` e só a regra o decide (relógio do servidor).
  */
 export interface InviteDoc {
   code: string;

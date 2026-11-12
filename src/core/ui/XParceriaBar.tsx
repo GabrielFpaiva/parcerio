@@ -1,10 +1,29 @@
-import { StyleSheet, Text, View } from 'react-native';
+import type { ComponentType } from 'react';
+import { StyleSheet, Text, View, type StyleProp, type ViewProps, type ViewStyle } from 'react-native';
 import { xpForNextLevel } from '@shared/level';
 import { theme } from './theme';
 
-type Props = { level: number; xpIntoLevel: number };
+type Props = {
+  level: number;
+  xpIntoLevel: number;
+  /**
+   * Variante animada: o chamador injeta um componente animado e um estilo que
+   * escala o preenchimento (ex.: scaleX de 0 a 1 com transformOrigin 'left').
+   * A largura estática continua sendo o valor final, então sem estes props o
+   * comportamento é o mesmo de sempre.
+   */
+  FillComponent?: ComponentType<ViewProps>;
+  fillStyle?: StyleProp<ViewStyle>;
+  hideLabel?: boolean;
+};
 
-export function XParceriaBar({ level, xpIntoLevel }: Props) {
+export function XParceriaBar({
+  level,
+  xpIntoLevel,
+  FillComponent = View,
+  fillStyle,
+  hideLabel = false,
+}: Props) {
   const target = xpForNextLevel(level);
   const progress = Math.min(1, Math.max(0, xpIntoLevel / target));
 
@@ -16,9 +35,9 @@ export function XParceriaBar({ level, xpIntoLevel }: Props) {
         accessibilityValue={{ min: 0, max: target, now: xpIntoLevel }}
         style={styles.track}
       >
-        <View style={[styles.fill, { width: `${progress * 100}%` }]} />
+        <FillComponent style={[styles.fill, { width: `${progress * 100}%` }, fillStyle]} />
       </View>
-      <Text style={styles.label}>{`${xpIntoLevel} / ${target} XParceria`}</Text>
+      {hideLabel ? null : <Text style={styles.label}>{`${xpIntoLevel} / ${target} XParceria`}</Text>}
     </View>
   );
 }
