@@ -59,6 +59,22 @@ describe('invites — create', () => {
     await assertFails(alice.doc('invites/AB3D4F7H').set(forged));
   });
 
+  // Codex P1: o convite copia users/{uid}, e um campo não escalar ali
+  // derrubava a tela de quem abrisse o código.
+  it.each(['displayName', 'photoURL', 'avatarEmoji', 'handle'])(
+    'NEGA %s não escalar, mesmo igual ao users/{alice}',
+    async (field) => {
+      const evil = { nested: ['x'] };
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.firestore().doc(`users/${ALICE}`).update({ [field]: evil });
+      });
+      const alice = env.authenticatedContext(ALICE).firestore();
+      const forged = validInvite(ALICE);
+      (forged.fromProfile as Record<string, unknown>)[field] = evil;
+      await assertFails(alice.doc('invites/AB3D4F7H').set(forged));
+    },
+  );
+
   it('NEGA createdAt escolhido pelo cliente', async () => {
     // Sem isso, dava para criar um convite com data futura e nunca expirar.
     const alice = env.authenticatedContext(ALICE).firestore();

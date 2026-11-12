@@ -91,9 +91,22 @@ service cloud.firestore {
     // get(campo, null) pelo mesmo motivo de matchesUserProfile (abaixo): um
     // users doc pode não ter photoURL/avatarEmoji, e o acesso direto dava
     // erro e impedia essa pessoa de gerar convite.
+    // Outra pessoa renderiza estes campos (convite, parceria): um map ou uma
+    // lista aqui derruba a tela dela. Ausente ou null continua valendo.
+    function profileFieldsAreScalar(d) {
+      return (d.get('displayName', null) == null || d.displayName is string)
+          && (d.get('photoURL', null) == null || d.photoURL is string)
+          && (d.get('avatarEmoji', null) == null || d.avatarEmoji is string);
+    }
+
+    // Os tipos são conferidos aqui também, e não só em users: um users doc
+    // gravado antes da checagem de tipo ainda poderia ter campo não escalar.
     function matchesOwnProfile(p) {
       let u = userDoc(request.auth.uid);
-      return p.get('displayName', null) == u.get('displayName', null)
+      return p.displayName is string
+          && p.handle is string
+          && profileFieldsAreScalar(p)
+          && p.get('displayName', null) == u.get('displayName', null)
           && p.get('photoURL', null) == u.get('photoURL', null)
           && p.get('avatarEmoji', null) == u.get('avatarEmoji', null)
           && p.get('handle', null) == u.get('handle', null);
@@ -347,6 +360,7 @@ service cloud.firestore {
                     && request.resource.data.handle is string
                     && request.resource.data.stats == zeroStats()
                     && getAfter(/databases/$(database)/documents/handles/$(request.resource.data.handle)).data.uid == request.auth.uid
+                    && profileFieldsAreScalar(request.resource.data)
                     && request.resource.data.keys().hasOnly(
                          ['uid', 'displayName', 'handle', 'photoURL', 'avatarEmoji', 'timezone',
                           'createdAt', 'lastActiveAt', 'stats', 'settings']);
@@ -356,6 +370,7 @@ service cloud.firestore {
                     && request.resource.data.handle == resource.data.handle
                     && request.resource.data.stats == resource.data.stats
                     && getAfter(/databases/$(database)/documents/handles/$(request.resource.data.handle)).data.uid == request.auth.uid
+                    && profileFieldsAreScalar(request.resource.data)
                     && request.resource.data.keys().hasOnly(
                          ['uid', 'displayName', 'handle', 'photoURL', 'avatarEmoji', 'timezone',
                           'createdAt', 'lastActiveAt', 'stats', 'settings']);

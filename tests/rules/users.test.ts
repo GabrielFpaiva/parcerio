@@ -22,6 +22,15 @@ describe('users — permitido', () => {
     await assertSucceeds(updateDoc(doc(db, 'users', ALICE), { displayName: 'Gabriel' }));
   });
 
+  // O parceiro renderiza estes campos (memberProfiles é cópia de users).
+  it.each(['displayName', 'photoURL', 'avatarEmoji'])('NEGA gravar %s não escalar', async (field) => {
+    const db = env.authenticatedContext(ALICE).firestore();
+    await claimHandle(db, ALICE, 'alice');
+    await assertFails(setDoc(doc(db, 'users', ALICE), { ...validProfile(ALICE, 'alice'), [field]: { a: 1 } }));
+    await setDoc(doc(db, 'users', ALICE), validProfile(ALICE, 'alice'));
+    await assertFails(updateDoc(doc(db, 'users', ALICE), { [field]: ['x'] }));
+  });
+
   it('qualquer autenticado lê perfil alheio (necessário para o mapa)', async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), 'users', ALICE), validProfile(ALICE, 'alice'));
