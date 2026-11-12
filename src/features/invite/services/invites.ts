@@ -1,5 +1,4 @@
 import {
-  type Timestamp,
   doc,
   getDoc,
   runTransaction,
@@ -61,7 +60,8 @@ export async function readInvite(db: Firestore, code: string): Promise<InviteDoc
  * Por que o aceite não aconteceu, para a tela escolher a mensagem:
  * `used` e `expired` levam ao pedido de convite novo; `self`, `not-found` e
  * `already-partners` têm texto próprio. Erro que não é recusa de domínio
- * (rede, PERMISSION_DENIED) sai como o FirestoreError original.
+ * (rede, PERMISSION_DENIED numa leitura) sai como o FirestoreError original.
+ * `expired` é o PERMISSION_DENIED do commit: ver acceptInvite.
  */
 export type AcceptRejection = InviteRejection | 'not-found' | 'already-partners';
 
@@ -102,78 +102,87 @@ async function memberProfileOf(tx: Transaction, db: Firestore, uid: string): Pro
  *
  * As validações aqui existem para a mensagem ser específica; a autoridade
  * continua sendo a regra, que roda de novo no commit.
+ *
+ * Vencimento é a exceção: não há checagem local, porque o relógio do aparelho
+ * pode estar errado e o convite nasceu com o do servidor. Com as outras
+ * recusas já descartadas pelas leituras da transação, o PERMISSION_DENIED do
+ * commit é a regra dizendo que o convite venceu.
+ * shortcut: qualquer outra negação da regra no commit também sai como
+ * `expired`; trocar por uma callable com motivo explícito se isso confundir.
  */
 export async function acceptInvite(
   db: Firestore,
   code: string,
   accepterUid: string,
 ): Promise<AcceptResult> {
-  return runTransaction(db, async (tx) => {
-    const inviteRef = doc(db, 'invites', code);
-    const inviteSnap = await tx.get(inviteRef);
-    if (!inviteSnap.exists()) throw new InviteRejectedError('not-found');
+  let committing = false;
+  try {
+    return await runTransaction(db, async (tx) => {
+      committing = false; // o SDK reexecuta a função em caso de contenção
+      const inviteRef = doc(db, 'invites', code);
+      const inviteSnap = await tx.get(inviteRef);
+      if (!inviteSnap.exists()) throw new InviteRejectedError('not-found');
 
-    const invite = inviteSnap.data() as InviteDoc;
-    const rejection = checkInvite(
-      {
-        fromUid: invite.fromUid,
-        usedBy: invite.usedBy,
-        status: invite.status,
-        createdAtMs: (invite.createdAt as Timestamp).toMillis(),
-      },
-      accepterUid,
-      Date.now(),
-    );
-    if (rejection !== null) throw new InviteRejectedError(rejection);
+      const invite = inviteSnap.data() as InviteDoc;
+      const rejection = checkInvite(invite, accepterUid);
+      if (rejection !== null) throw new InviteRejectedError(rejection);
 
-    const pid = partnershipId(invite.fromUid, accepterUid);
-    const partnershipRef = doc(db, 'partnerships', pid);
-    // A regra libera `get` de parceria inexistente para quem compõe o pid,
-    // então ausência é snapshot vazio; PERMISSION_DENIED aqui é real e propaga.
-    const snap = await tx.get(partnershipRef);
-    const existing = snap.exists() ? (snap.data() as PartnershipDoc) : null;
-    if (existing && existing.status !== 'ended') {
-      throw new InviteRejectedError('already-partners');
-    }
+      const pid = partnershipId(invite.fromUid, accepterUid);
+      const partnershipRef = doc(db, 'partnerships', pid);
+      // A regra libera `get` de parceria inexistente para quem compõe o pid,
+      // então ausência é snapshot vazio; PERMISSION_DENIED aqui é real e propaga.
+      const snap = await tx.get(partnershipRef);
+      const existing = snap.exists() ? (snap.data() as PartnershipDoc) : null;
+      if (existing && existing.status !== 'ended') {
+        throw new InviteRejectedError('already-partners');
+      }
 
-    const memberProfiles = {
-      [invite.fromUid]: await memberProfileOf(tx, db, invite.fromUid),
-      [accepterUid]: await memberProfileOf(tx, db, accepterUid),
-    };
+      const memberProfiles = {
+        [invite.fromUid]: await memberProfileOf(tx, db, invite.fromUid),
+        [accepterUid]: await memberProfileOf(tx, db, accepterUid),
+      };
 
-    tx.update(inviteRef, { usedBy: accepterUid, status: 'accepted' });
+      // Daqui em diante só há escritas: uma negação é do commit, não de leitura.
+      committing = true;
+      tx.update(inviteRef, { usedBy: accepterUid, status: 'accepted' });
 
-    if (existing) {
-      tx.update(partnershipRef, {
-        ...buildReactivationUpdate(memberProfiles, code),
+      if (existing) {
+        tx.update(partnershipRef, {
+          ...buildReactivationUpdate(memberProfiles, code),
+          updatedAt: serverTimestamp(),
+        });
+        // Id = o código do convite: é o evento que a regra da reativação confere.
+        tx.set(doc(db, `partnerships/${pid}/events`, code), {
+          type: 'partnership_resumed',
+          occurredAt: serverTimestamp(),
+          xpAwarded: 0,
+        });
+        return { pid, reactivated: true };
+      }
+
+      const birth = buildBirthPartnership({
+        inviter: { uid: invite.fromUid, profile: memberProfiles[invite.fromUid]! },
+        accepter: { uid: accepterUid, profile: memberProfiles[accepterUid]! },
+        inviteCode: code,
+      });
+      tx.set(partnershipRef, {
+        ...birth,
+        createdAt: serverTimestamp(),
+        activatedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-      // Id = o código do convite: é o evento que a regra da reativação confere.
-      tx.set(doc(db, `partnerships/${pid}/events`, code), {
-        type: 'partnership_resumed',
+      // Id fixo `born`: a regra do nascimento confere este evento no pós-commit.
+      tx.set(doc(db, `partnerships/${pid}/events`, 'born'), {
+        type: 'partnership_born',
         occurredAt: serverTimestamp(),
-        xpAwarded: 0,
+        xpAwarded: 100,
       });
-      return { pid, reactivated: true };
+      return { pid, reactivated: false };
+    });
+  } catch (error) {
+    if (committing && (error as { code?: string }).code === 'permission-denied') {
+      throw new InviteRejectedError('expired');
     }
-
-    const birth = buildBirthPartnership({
-      inviter: { uid: invite.fromUid, profile: memberProfiles[invite.fromUid]! },
-      accepter: { uid: accepterUid, profile: memberProfiles[accepterUid]! },
-      inviteCode: code,
-    });
-    tx.set(partnershipRef, {
-      ...birth,
-      createdAt: serverTimestamp(),
-      activatedAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-    // Id fixo `born`: a regra do nascimento confere este evento no pós-commit.
-    tx.set(doc(db, `partnerships/${pid}/events`, 'born'), {
-      type: 'partnership_born',
-      occurredAt: serverTimestamp(),
-      xpAwarded: 100,
-    });
-    return { pid, reactivated: false };
-  });
+    throw error;
+  }
 }

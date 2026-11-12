@@ -12,7 +12,6 @@ export interface InviteCheckInput {
   fromUid: string;
   usedBy: string | null;
   status: 'pending' | 'accepted';
-  createdAtMs: number;
 }
 
 /**
@@ -68,12 +67,12 @@ export function normalizeInviteCode(raw: string): string {
 export function checkInvite(
   invite: InviteCheckInput,
   accepterUid: string,
-  nowMs: number,
 ): InviteRejection | null {
   // O auto-convite vem primeiro: para quem convidou, "esse convite é seu" é
-  // melhor que "expirou", mesmo quando as duas coisas são verdade.
+  // melhor que qualquer outra recusa.
   if (invite.fromUid === accepterUid) return 'self';
   if (invite.usedBy !== null || invite.status === 'accepted') return 'used';
-  if (invite.createdAtMs + INVITE_TTL_MS <= nowMs) return 'expired';
+  // `expired` não sai daqui: o relógio do aparelho não decide vencimento.
+  // Quem decide é a regra (request.time), no commit do aceite.
   return null;
 }

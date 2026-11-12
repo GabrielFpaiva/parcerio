@@ -184,9 +184,18 @@ describe('AcceptInviteScreen', () => {
     expect(await screen.findByText('Não consegui abrir o compartilhamento. Tenta de novo.')).toBeTruthy();
   });
 
-  it('pedido de convite expirado usa o texto de esfriou', async () => {
+  // O relógio do aparelho não decide vencimento: quem decide é a regra, no aceite.
+  it('convite velho pelo relógio do aparelho ainda oferece Aceitar', async () => {
     mockRead.mockResolvedValue(invite({ createdAt: { toMillis: () => 0 } }));
     await renderScreen();
+    expect(await screen.findByLabelText('Aceitar')).toBeTruthy();
+  });
+
+  it('pedido de convite expirado usa o texto de esfriou', async () => {
+    mockRead.mockResolvedValue(invite());
+    mockAccept.mockRejectedValue(new InviteRejectedError('expired'));
+    await renderScreen();
+    await fireEvent.press(await screen.findByLabelText('Aceitar'));
     await fireEvent.press(await screen.findByLabelText('Pedir um convite novo'));
     expect(shareSpy).toHaveBeenCalledWith({
       message: 'Ana, seu convite do Parcerio esfriou — me manda outro?',

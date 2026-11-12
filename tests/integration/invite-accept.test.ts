@@ -139,6 +139,16 @@ describe('fraude e casos de borda', () => {
       .rejects.toMatchObject({ reason: 'expired' });
   });
 
+  it('aceita convite válido mesmo com o relógio do aparelho um mês adiantado', async () => {
+    const code = await aliceInvites();
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    try {
+      await expect(acceptInvite(dbOf(BOB), code, BOB)).resolves.toMatchObject({ reactivated: false });
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it('recusa o segundo aceite do mesmo convite', async () => {
     const code = await aliceInvites();
     await acceptInvite(dbOf(BOB), code, BOB);

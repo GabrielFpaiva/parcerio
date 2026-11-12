@@ -1,7 +1,6 @@
 import {
   INVITE_ALPHABET,
   INVITE_CODE_LENGTH,
-  INVITE_TTL_MS,
   checkInvite,
   generateInviteCode,
   normalizeInviteCode,
@@ -61,38 +60,23 @@ describe('normalizeInviteCode', () => {
 });
 
 describe('checkInvite', () => {
-  const NOW = 1_754_000_000_000;
-  // Não existe campo `expiresAt`: o vencimento é derivado de createdAt + 7d.
-  // O cliente não consegue prever `request.time`, então um expiresAt gravado
-  // seria impossível de fixar por regra — e um convite eterno é o abuso óbvio.
-  const base = {
-    fromUid: 'bob-uid',
-    usedBy: null,
-    status: 'pending' as const,
-    createdAtMs: NOW - 1000,
-  };
+  // Vencimento não é decidido aqui: o relógio do aparelho não é confiável.
+  // Quem decide é a regra (request.time), e o aceite traduz a negação.
+  const base = { fromUid: 'bob-uid', usedBy: null, status: 'pending' as const };
 
   it('aceita convite válido de outra pessoa', () => {
-    expect(checkInvite(base, 'alice-uid', NOW)).toBeNull();
-  });
-
-  it('aceita no último instante antes dos 7 dias', () => {
-    expect(checkInvite({ ...base, createdAtMs: NOW - INVITE_TTL_MS + 1 }, 'alice-uid', NOW)).toBeNull();
-  });
-
-  it('recusa exatamente aos 7 dias', () => {
-    expect(checkInvite({ ...base, createdAtMs: NOW - INVITE_TTL_MS }, 'alice-uid', NOW)).toBe('expired');
+    expect(checkInvite(base, 'alice-uid')).toBeNull();
   });
 
   it('recusa convite já usado', () => {
-    expect(checkInvite({ ...base, usedBy: 'carol-uid', status: 'accepted' }, 'alice-uid', NOW)).toBe('used');
+    expect(checkInvite({ ...base, usedBy: 'carol-uid', status: 'accepted' }, 'alice-uid')).toBe('used');
   });
 
   it('recusa quem tenta aceitar o próprio convite', () => {
-    expect(checkInvite(base, 'bob-uid', NOW)).toBe('self');
+    expect(checkInvite(base, 'bob-uid')).toBe('self');
   });
 
-  it('checa o auto-convite antes da expiração — a mensagem certa importa mais', () => {
-    expect(checkInvite({ ...base, createdAtMs: NOW - INVITE_TTL_MS }, 'bob-uid', NOW)).toBe('self');
+  it('checa o auto-convite antes do uso — a mensagem certa importa mais', () => {
+    expect(checkInvite({ ...base, usedBy: 'carol-uid', status: 'accepted' }, 'bob-uid')).toBe('self');
   });
 });
