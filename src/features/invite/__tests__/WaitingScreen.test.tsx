@@ -83,12 +83,36 @@ it('usa um texto neutro quando o nome não existe', async () => {
 it('volta para a raiz quando a parceria aparece', async () => {
   const view = await renderScreen();
   expect(mockDismissTo).not.toHaveBeenCalled();
-  mockUsePartnerships.mockReturnValue({ data: [{ id: 'p' }], isLoading: false, isError: false });
+  mockUsePartnerships.mockReturnValue({
+    data: [{ id: 'p', bornFromInvite: 'K7QM2X9P' }], isLoading: false, isError: false,
+  });
   await view.rerender(
     <QueryClientProvider client={new QueryClient()}><WaitingScreen /></QueryClientProvider>,
   );
   await waitFor(() => expect(mockDismissTo).toHaveBeenCalledWith('/'));
   expect(mockReplace).not.toHaveBeenCalled();
+});
+
+it('quem já tem outra parceria continua esperando o convite novo', async () => {
+  mockUsePartnerships.mockReturnValue({
+    data: [{ id: 'old', bornFromInvite: 'OLDCODE1' }], isLoading: false, isError: false,
+  });
+  await renderScreen();
+  expect(mockDismissTo).not.toHaveBeenCalled();
+});
+
+it('aceite do código anterior, depois de gerar outro, também volta para a raiz', async () => {
+  mockCreateInvite.mockResolvedValue('NEW1CODE');
+  const view = await renderScreen();
+  await fireEvent.press(screen.getByText('Gerar outro convite'));
+  await waitFor(() => expect(screen.getByText('NEW1 CODE')).toBeTruthy());
+  mockUsePartnerships.mockReturnValue({
+    data: [{ id: 'p', bornFromInvite: 'K7QM2X9P' }], isLoading: false, isError: false,
+  });
+  await view.rerender(
+    <QueryClientProvider client={new QueryClient()}><WaitingScreen /></QueryClientProvider>,
+  );
+  await waitFor(() => expect(mockDismissTo).toHaveBeenCalledWith('/'));
 });
 
 it('"Depois eu faço isso" leva à raiz sem convite', async () => {

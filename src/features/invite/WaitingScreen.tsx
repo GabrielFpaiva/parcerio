@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@/core/auth/useAuth';
@@ -30,10 +30,15 @@ export function WaitingScreen() {
 
   // Só volta à raiz: a cerimônia é do BornCeremonyGate, que espera esta tela
   // sair da frente. dismissTo, não replace: replace empilharia outra lista.
-  const hasPartnership = (partnerships.data?.length ?? 0) > 0;
+  // Só a parceria nascida de um convite DESTA tela conta: quem já tem outra
+  // parceria ficaria sem conseguir esperar. "Gerar outro" não invalida os
+  // códigos anteriores, então todos os que passaram por aqui valem.
+  const shownCodes = useRef(new Set<string>());
+  if (code !== null) shownCodes.current.add(code);
+  const accepted = partnerships.data?.some((p) => shownCodes.current.has(p.bornFromInvite)) ?? false;
   useEffect(() => {
-    if (hasPartnership) router.dismissTo('/');
-  }, [hasPartnership, router]);
+    if (accepted) router.dismissTo('/');
+  }, [accepted, router]);
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
